@@ -576,7 +576,7 @@ export default function Suppliers() {
       <div className="flex flex-wrap gap-3 items-center bg-white rounded-xl border border-slate-100 p-3">
         <div className="flex-1 min-w-[200px] relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-          <input value={searchTerm} onChange={e => setSearch(e.target.value)}
+          <input value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
             placeholder="Search by name, GSTIN, drug license…"
             className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 outline-none" />
         </div>
@@ -595,7 +595,7 @@ export default function Suppliers() {
           <option value="BLACKLISTED">Blacklisted</option>
         </select>
         {(searchTerm || filterType || filterStatus) && (
-          <button onClick={() => { setSearch(''); setFilterType(''); setFilterStatus(''); }}
+          <button onClick={() => { setSearchTerm(''); setFilterType(''); setFilterStatus(''); }}
             className="flex items-center gap-1 px-3 py-2 text-xs font-bold text-red-500 border border-red-100 rounded-lg hover:bg-red-50 transition-colors">
             <X className="w-3 h-3" /> Clear
           </button>
