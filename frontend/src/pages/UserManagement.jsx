@@ -12,32 +12,22 @@ import RoleManagementPanel from './RoleManagementPanel';
 import { getRoleColor, ROLE_LABELS } from '../config/roles.config';
 import AppModal from '../components/ui/AppModal';
 import { formatDistanceToNow, format } from 'date-fns';
+import useDebounce from '../hooks/useDebounce';
+
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function UserManagement() {
-  const {
-    users,
-    loading,
-    searchTerm,
-    setSearch,
-    startPolling,
-    stopPolling,
-    createUser,
-    updateUser,
-    toggleUserStatus
-  } = useUserStore(useShallow(state => ({
-    users: state.users,
-    loading: state.loading,
-    searchTerm: state.searchTerm,
-    setSearch: state.setSearch,
-    startPolling: state.startPolling,
-    stopPolling: state.stopPolling,
-    createUser: state.createUser,
-    updateUser: state.updateUser,
-    toggleUserStatus: state.toggleUserStatus
-  })));
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+
+  const { items: users = [], isLoading: loading } = usePageData(
+    'users',
+    '/auth/users'
+  );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
   const [activeTab, setActiveTab] = useState('users');
   const [editingUser, setEditingUser] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -47,29 +37,49 @@ export default function UserManagement() {
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
   const [isResetMode, setIsResetMode] = useState(false); // true = reset, false = create
 
-  useEffect(() => {
-    startPolling();
-    return () => stopPolling();
-  }, []);
+  const createUserMutation = useMutation({
+    mutationFn: (formData) => api.post('/auth/users', formData),
+    onSuccess: (res, formData) => {
+      toast.success('User created successfully');
+      queryClient.invalidateQueries(['users']);
+      setCreatedUser({ ...res.data.data, password: formData.password });
+      setIsResetMode(false);
+      setIsCredentialModalOpen(true);
+      closeModal();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to create user')
+  });
 
-  const handleSave = async (formData) => {
+  const updateUserMutation = useMutation({
+    mutationFn: ({ id, formData }) => api.put(`/auth/users/${id}`, formData),
+    onSuccess: () => {
+      toast.success('User updated successfully');
+      queryClient.invalidateQueries(['users']);
+      closeModal();
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update user')
+  });
+
+  const toggleUserStatusMutation = useMutation({
+    mutationFn: (user) => api.put(`/auth/users/${user.id}/status`),
+    onSuccess: () => {
+      toast.success('User status updated');
+      queryClient.invalidateQueries(['users']);
+    },
+    onError: () => toast.error('Failed to update status')
+  });
+
+  const handleSave = (formData) => {
     if (editingUser) {
-      const ok = await updateUser(editingUser.id, formData);
-      if (ok) closeModal();
+      updateUserMutation.mutate({ id: editingUser.id, formData });
     } else {
-      const res = await createUser(formData);
-      if (res.success) {
-        setCreatedUser({ ...res.data, password: formData.password });
-        setIsResetMode(false);
-        setIsCredentialModalOpen(true);
-        closeModal();
-      }
+      createUserMutation.mutate(formData);
     }
   };
 
-  const handleToggleStatus = async (user, e) => {
+  const handleToggleStatus = (user, e) => {
     e.stopPropagation();
-    await toggleUserStatus(user);
+    toggleUserStatusMutation.mutate(user);
   };
 
   const handleResetPassword = async (user, e) => {
@@ -119,14 +129,14 @@ export default function UserManagement() {
   };
 
   const displayedUsers = useMemo(() => {
-    if (!searchTerm) return users;
-    const s = searchTerm.toLowerCase();
+    if (!debouncedSearch) return users;
+    const s = debouncedSearch.toLowerCase();
     return users.filter(u =>
       u.name?.toLowerCase().includes(s) ||
       u.username?.toLowerCase().includes(s) ||
       u.email?.toLowerCase().includes(s)
     );
-  }, [users, searchTerm]);
+  }, [users, debouncedSearch]);
 
   const formatTimestamp = (ts) => {
     if (!ts) return null;
@@ -298,8 +308,9 @@ export default function UserManagement() {
       {activeTab === 'users' ? (
         <>
           <ModuleFilterBar 
-            onSearch={setSearch}
+            onSearch={setSearchTerm}
             searchValue={searchTerm}
+            searchPlaceholder="Search by Name, Username, Email..."
             actions={[
               { label: 'Add New User', icon: Plus, variant: 'primary', onClick: openAddModal }
             ]}

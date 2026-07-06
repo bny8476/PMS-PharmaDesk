@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Eye, CheckCircle, XCircle, Plus, ClipboardList, Trash2, Search, PlusCircle } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -20,7 +21,6 @@ export default function PendingPharmacyReplacement() {
 
   useEffect(() => {
     // Re-fetch logic would go here if not using mocks
-    console.log('Refreshing Replacements for route:', location.key);
   }, [location.key]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -30,7 +30,11 @@ export default function PendingPharmacyReplacement() {
 
   // Filter and Search State
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // New Request Form State
   const [ward, setWard] = useState('General Ward - A');
@@ -145,8 +149,8 @@ export default function PendingPharmacyReplacement() {
   ];
 
   const filteredReplacements = replacements.filter(r => {
-    const s = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
+    const s = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
       r.reqNo.toLowerCase().includes(s) || 
       r.ward.toLowerCase().includes(s) || 
       r.requestedBy.toLowerCase().includes(s);
@@ -167,7 +171,7 @@ export default function PendingPharmacyReplacement() {
         <p className="text-sm text-gray-500 font-medium">Manage stock replacement requests from hospital wards and departments</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -176,8 +180,8 @@ export default function PendingPharmacyReplacement() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredReplacements} hover striped />
-        <Pagination totalRecords={filteredReplacements.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        <DataTable columns={columns} data={pageSize === 'All' ? filteredReplacements : filteredReplacements.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+        <Pagination totalRecords={filteredReplacements.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
 
       {/* New Request Modal */}
@@ -214,19 +218,12 @@ export default function PendingPharmacyReplacement() {
 
            <div className="space-y-4">
               <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <table className="w-full text-sm">
-                   <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                     <tr>
-                       <th className="px-4 py-3 text-left">Medicine Name</th>
-                       <th className="px-4 py-3 text-center w-32">Req. Qty</th>
-                       <th className="px-4 py-3 text-right">Stock</th>
-                       <th className="px-4 py-3 text-center w-12"></th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-50 bg-white">
-                     {requestItems.map((item, idx) => (
-                       <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                         <td className="px-4 py-4 relative">
+                <DataTable 
+                  columns={[
+                    {
+                      header: 'Medicine Name',
+                      render: (item, idx) => (
+                        <div className="relative">
                            <input 
                             type="text" 
                             value={item.name}
@@ -250,29 +247,43 @@ export default function PendingPharmacyReplacement() {
                                 ))}
                              </div>
                            )}
-                         </td>
-                         <td className="px-4 py-4">
-                           <input 
-                            type="number" 
-                            value={item.qty}
-                            onChange={(e) => {
-                              const ni = [...requestItems];
-                              ni[idx].qty = parseInt(e.target.value) || 0;
-                              setRequestItems(ni);
-                            }}
-                            className="w-20 mx-auto block text-center border rounded-lg py-1 outline-none focus:border-primary font-bold" 
-                           />
-                         </td>
-                         <td className="px-4 py-4 text-right font-bold text-success">
-                            {item.stock}
-                         </td>
-                         <td className="px-4 py-4 text-center">
-                            <button onClick={() => setRequestItems(requestItems.filter(i => i.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4"/></button>
-                         </td>
-                       </tr>
-                     ))}
-                   </tbody>
-                </table>
+                        </div>
+                      )
+                    },
+                    {
+                      header: <div className="text-center w-32">Req. Qty</div>,
+                      render: (item, idx) => (
+                        <input 
+                          type="number" 
+                          value={item.qty}
+                          onChange={(e) => {
+                            const ni = [...requestItems];
+                            ni[idx].qty = parseInt(e.target.value) || 0;
+                            setRequestItems(ni);
+                          }}
+                          className="w-20 mx-auto block text-center border rounded-lg py-1 outline-none focus:border-primary font-bold" 
+                        />
+                      )
+                    },
+                    {
+                      header: <div className="text-right">Stock</div>,
+                      render: (item) => <div className="text-right font-bold text-success">{item.stock}</div>
+                    },
+                    {
+                      header: <div className="text-center w-12"></div>,
+                      render: (item) => (
+                        <div className="text-center">
+                          <button onClick={() => setRequestItems(requestItems.filter(i => i.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors">
+                            <Trash2 className="w-4 h-4"/>
+                          </button>
+                        </div>
+                      )
+                    }
+                  ]}
+                  data={requestItems}
+                  hover
+                  striped
+                />
                 <button onClick={addRow} className="w-full py-3 bg-slate-50 text-sky-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 border-t border-slate-100 transition-all">+ Add Medicine</button>
               </div>
            </div>

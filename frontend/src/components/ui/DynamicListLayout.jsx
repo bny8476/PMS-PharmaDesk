@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 import { Search, Printer, Download, Filter } from 'lucide-react';
 import DataTable from './DataTable';
 
@@ -91,3 +92,14 @@ export default function DynamicListLayout({
     </div>
   );
 }
+
+DynamicListLayout.propTypes = {
+  title: PropTypes.string.isRequired,
+  columns: PropTypes.arrayOf(PropTypes.shape({
+    header: PropTypes.string,
+    accessor: PropTypes.string,
+    render: PropTypes.func,
+  })).isRequired,
+  fetchData: PropTypes.func,
+  filters: PropTypes.arrayOf(PropTypes.string),
+};

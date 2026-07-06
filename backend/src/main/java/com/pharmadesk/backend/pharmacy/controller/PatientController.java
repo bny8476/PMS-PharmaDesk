@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.Patient;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -30,7 +31,7 @@ public class PatientController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<Patient>> createPatient(@RequestBody Patient patient) {
+    public ResponseEntity<ApiResponse<Patient>> createPatient(@Valid @RequestBody Patient patient) {
         // Save first to get ID for UHID generation
         patient.setUhid("PENDING");
         Patient saved = patientRepository.save(patient);
@@ -43,7 +44,7 @@ public class PatientController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ApiResponse<Patient>> updatePatient(@PathVariable Long id, @RequestBody Patient patientDetails) {
+    public ResponseEntity<ApiResponse<Patient>> updatePatient(@PathVariable Long id, @Valid @RequestBody Patient patientDetails) {
         Patient patient = patientRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Patient not found"));
         
@@ -53,6 +54,8 @@ public class PatientController {
         patient.setPhone(patientDetails.getPhone());
         patient.setAddress(patientDetails.getAddress());
         patient.setInsuranceId(patientDetails.getInsuranceId());
+        patient.setPreferredDelivery(patientDetails.getPreferredDelivery());
+        patient.setDeliveryAddress(patientDetails.getDeliveryAddress());
         
         return ResponseEntity.ok(ApiResponse.success(patientRepository.save(patient), "Patient updated"));
     }

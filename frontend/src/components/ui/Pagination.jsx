@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
@@ -88,3 +89,11 @@ export default function Pagination({
     </div>
   );
 }
+
+Pagination.propTypes = {
+  totalRecords: PropTypes.number.isRequired,
+  currentPage: PropTypes.number.isRequired,
+  pageSize: PropTypes.oneOfType([PropTypes.number, PropTypes.string]).isRequired,
+  onPageChange: PropTypes.func.isRequired,
+  onPageSizeChange: PropTypes.func
+};

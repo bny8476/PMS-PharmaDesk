@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import { useLocation } from 'react-router-dom';
 import { Search, Plus, Eye, Printer, RotateCcw, CheckCircle } from 'lucide-react';
@@ -10,21 +11,18 @@ import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
 import PharmacyInvoice from '../components/pharmacy/PharmacyInvoice';
-import { useReturnsStore } from '../store/useReturnsStore';
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function MedicineReturns() {
   const location = useLocation();
-  const {
-    returnsList,
-    loading,
-    fetchReturns,
-    approveReturn
-  } = useReturnsStore(useShallow(state => ({
-    returnsList: state.returnsList,
-    loading: state.loading,
-    fetchReturns: state.fetchReturns,
-    approveReturn: state.approveReturn
-  })));
+  const queryClient = useQueryClient();
+
+  const { items: returnsList = [], isLoading: loading } = usePageData(
+    'returns',
+    '/pharmacy/returns'
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [billNumber, setBillNumber] = useState('');
   const [selectedBill, setSelectedBill] = useState(null);
@@ -33,16 +31,17 @@ export default function MedicineReturns() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [invoiceToView, setInvoiceToView] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  useEffect(() => {
-    fetchReturns();
-  }, [location.key, fetchReturns]);
 
-  const loadBill = async () => {
-    if (!billNumber) return;
-    try {
-      const response = await pharmacyService.getSaleByNumber(billNumber);
+
+  const loadBillMutation = useMutation({
+    mutationFn: (billNo) => pharmacyService.getSaleByNumber(billNo),
+    onSuccess: (response) => {
       if (response.success) {
         setSelectedBill(response.data);
         setReturnItems(response.data.items.map(item => ({
@@ -51,13 +50,29 @@ export default function MedicineReturns() {
           checked: false
         })));
         toast.success('Bill loaded');
+      } else {
+        toast.error('Bill not found');
       }
-    } catch (error) {
-      toast.error('Bill not found');
-    }
+    },
+    onError: () => toast.error('Bill not found')
+  });
+
+  const loadBill = () => {
+    if (!billNumber) return;
+    loadBillMutation.mutate(billNumber);
   };
 
-  const handleSaveReturn = async () => {
+  const initiateReturnMutation = useMutation({
+    mutationFn: (itemsToReturn) => pharmacyService.initiateReturn(selectedBill.id, itemsToReturn, returnReason),
+    onSuccess: () => {
+      toast.success('Return initiated and pending approval');
+      setIsModalOpen(false);
+      queryClient.invalidateQueries(['returns']);
+    },
+    onError: (error) => toast.error(error.response?.data?.message || 'Failed to initiate return')
+  });
+
+  const handleSaveReturn = () => {
     const itemsToReturn = returnItems
       .filter(item => item.checked && item.returnQty > 0)
       .map(item => ({
@@ -70,16 +85,20 @@ export default function MedicineReturns() {
       return;
     }
 
-    try {
-      const response = await pharmacyService.initiateReturn(selectedBill.id, itemsToReturn, returnReason);
-      if (response.success) {
-        toast.success('Return initiated and pending approval');
-        setIsModalOpen(false);
-        fetchReturns();
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to initiate return');
-    }
+    initiateReturnMutation.mutate(itemsToReturn);
+  };
+
+  const approveReturnMutation = useMutation({
+    mutationFn: (id) => pharmacyService.approveReturn(id),
+    onSuccess: () => {
+      toast.success('Return approved');
+      queryClient.invalidateQueries(['returns']);
+    },
+    onError: () => toast.error('Failed to approve return')
+  });
+
+  const approveReturn = (id) => {
+    approveReturnMutation.mutate(id);
   };
 
   const calculateTotalRefund = () => {
@@ -126,7 +145,7 @@ export default function MedicineReturns() {
         <p className="text-sm text-gray-500 font-medium">Manage returns and issue credit notes</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -137,25 +156,46 @@ export default function MedicineReturns() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable 
-          columns={columns} 
-          data={returnsList.filter(row => {
-            const searchLower = searchTerm.toLowerCase();
-            const matchesSearch = !searchTerm || 
-              row.id?.toString().includes(searchLower) ||
-              row.originalBill?.billNumber?.toLowerCase().includes(searchLower) ||
-              row.originalBill?.patientName?.toLowerCase().includes(searchLower);
-            
-            const returnDate = new Date(row.returnDate);
-            const matchesFrom = !dateRange.from || returnDate >= dateRange.from;
-            const matchesTo = !dateRange.to || returnDate <= dateRange.to;
-            
-            return matchesSearch && matchesFrom && matchesTo;
-          })} 
-          hover 
-          striped 
-        />
-        <Pagination totalRecords={returnsList.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={9} />
+        ) : (
+          <>
+            <DataTable 
+              columns={columns} 
+              data={(() => {
+                const filtered = returnsList.filter(row => {
+                  const searchLower = debouncedSearch.toLowerCase();
+                  const matchesSearch = !debouncedSearch || 
+                    row.id?.toString().includes(searchLower) ||
+                    row.originalBill?.billNumber?.toLowerCase().includes(searchLower) ||
+                    row.originalBill?.patientName?.toLowerCase().includes(searchLower);
+                  
+                  const returnDate = new Date(row.returnDate);
+                  const matchesFrom = !dateRange.from || returnDate >= dateRange.from;
+                  const matchesTo = !dateRange.to || returnDate <= dateRange.to;
+                  
+                  return matchesSearch && matchesFrom && matchesTo;
+                });
+                return pageSize === 'All' ? filtered : filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+              })()} 
+              hover 
+              striped 
+            />
+            <Pagination totalRecords={returnsList.filter(row => {
+                  const searchLower = debouncedSearch.toLowerCase();
+                  const matchesSearch = !debouncedSearch || 
+                    row.id?.toString().includes(searchLower) ||
+                    row.originalBill?.billNumber?.toLowerCase().includes(searchLower) ||
+                    row.originalBill?.patientName?.toLowerCase().includes(searchLower);
+                  
+                  const returnDate = new Date(row.returnDate);
+                  const matchesFrom = !dateRange.from || returnDate >= dateRange.from;
+                  const matchesTo = !dateRange.to || returnDate <= dateRange.to;
+                  
+                  return matchesSearch && matchesFrom && matchesTo;
+                }).length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       <AppModal 
@@ -173,9 +213,10 @@ export default function MedicineReturns() {
             </button>
             <button
               onClick={handleSaveReturn}
-              className="px-8 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-200/50 hover:bg-red-700 transition-all flex items-center gap-2"
+              disabled={initiateReturnMutation.isPending}
+              className="px-8 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-200/50 hover:bg-red-700 transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              <RotateCcw className="w-4 h-4"/> Save Return
+              <RotateCcw className="w-4 h-4"/> {initiateReturnMutation.isPending ? 'Saving...' : 'Save Return'}
             </button>
           </div>
         }
@@ -201,9 +242,10 @@ export default function MedicineReturns() {
               </div>
               <button
                 onClick={loadBill}
-                className="px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700 transition-all shadow whitespace-nowrap"
+                disabled={loadBillMutation.isPending}
+                className="px-5 py-2.5 bg-slate-800 text-white rounded-xl font-bold text-sm hover:bg-slate-700 transition-all shadow whitespace-nowrap disabled:opacity-50"
               >
-                Load Bill Items
+                {loadBillMutation.isPending ? 'Loading...' : 'Load Bill Items'}
               </button>
             </div>
           </div>
@@ -211,22 +253,12 @@ export default function MedicineReturns() {
           {/* Bill Items Table — shown only after loading */}
           {selectedBill && returnItems.length > 0 && (
             <div className="border border-gray-100 rounded-xl overflow-hidden shadow-sm">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800 text-white text-[11px] uppercase tracking-widest">
-                  <tr>
-                    <th className="px-4 py-3 text-center w-10"></th>
-                    <th className="px-4 py-3 text-left">Medicine</th>
-                    <th className="px-4 py-3 text-left">Batch</th>
-                    <th className="px-4 py-3 text-center">Billed Qty</th>
-                    <th className="px-4 py-3 text-center">Return Qty</th>
-                    <th className="px-4 py-3 text-right">Rate</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {returnItems.map((item, idx) => (
-                    <tr key={item.id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-3 text-center">
+              <DataTable 
+                columns={[
+                  {
+                    header: <div className="text-center w-10"></div>,
+                    render: (item, idx) => (
+                      <div className="text-center">
                         <input
                           type="checkbox"
                           checked={item.checked}
@@ -237,32 +269,55 @@ export default function MedicineReturns() {
                           }}
                           className="rounded accent-primary w-4 h-4"
                         />
-                      </td>
-                      <td className="px-4 py-3 font-medium text-gray-800">{item.stock?.medicine?.name}</td>
-                      <td className="px-4 py-3 text-slate-500 font-mono text-xs">{item.stock?.batchNumber}</td>
-                      <td className="px-4 py-3 text-center font-bold">{item.quantity}</td>
-                      <td className="px-4 py-3">
-                        <input
-                          type="number"
-                          min={0}
-                          max={item.quantity}
-                          value={item.returnQty}
-                          onChange={(e) => {
-                            const newItems = [...returnItems];
-                            newItems[idx].returnQty = parseInt(e.target.value) || 0;
-                            setReturnItems(newItems);
-                          }}
-                          className="w-20 mx-auto block text-center border border-slate-200 rounded-lg py-1 outline-none focus:border-red-400 text-red-600 font-bold"
-                        />
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600">₹{Number(item.unitPrice).toFixed(2)}</td>
-                      <td className="px-4 py-3 text-right font-bold text-red-600">
+                      </div>
+                    )
+                  },
+                  {
+                    header: 'Medicine',
+                    render: (item) => <div className="font-medium text-gray-800">{item.stock?.medicine?.name}</div>
+                  },
+                  {
+                    header: 'Batch',
+                    render: (item) => <div className="text-slate-500 font-mono text-xs">{item.stock?.batchNumber}</div>
+                  },
+                  {
+                    header: <div className="text-center">Billed Qty</div>,
+                    render: (item) => <div className="text-center font-bold">{item.quantity}</div>
+                  },
+                  {
+                    header: <div className="text-center">Return Qty</div>,
+                    render: (item, idx) => (
+                      <input
+                        type="number"
+                        min={0}
+                        max={item.quantity}
+                        value={item.returnQty}
+                        onChange={(e) => {
+                          const newItems = [...returnItems];
+                          newItems[idx].returnQty = parseInt(e.target.value) || 0;
+                          setReturnItems(newItems);
+                        }}
+                        className="w-20 mx-auto block text-center border border-slate-200 rounded-lg py-1 outline-none focus:border-red-400 text-red-600 font-bold"
+                      />
+                    )
+                  },
+                  {
+                    header: <div className="text-right">Rate</div>,
+                    render: (item) => <div className="text-right text-gray-600">₹{Number(item.unitPrice).toFixed(2)}</div>
+                  },
+                  {
+                    header: <div className="text-right">Amount</div>,
+                    render: (item) => (
+                      <div className="text-right font-bold text-red-600">
                         ₹{((item.netAmount / item.quantity) * item.returnQty).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    )
+                  }
+                ]}
+                data={returnItems}
+                hover
+                striped
+              />
             </div>
           )}
 

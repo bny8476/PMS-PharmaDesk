@@ -2,6 +2,7 @@ package com.pharmadesk.backend.pharmacy.dto;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 public class MedicineDTO {
     private Long id;
@@ -19,7 +20,13 @@ public class MedicineDTO {
     
     private String medicineCode;
     private String supplierVendor;
+    private Long supplierId;
+    private String supplierAddress;
+    private String supplierGstin;
+    private String supplierContact;
+    private String productType;
     private String packSize;
+    private Integer unitsPerPack;
     private BigDecimal mrp;
     private BigDecimal purchasePrice;
     private BigDecimal salePrice;
@@ -32,6 +39,10 @@ public class MedicineDTO {
     private String medicineName;   // alias used by LowStockAlerts.jsx
     private String supplierName;   // alias used by LowStockAlerts.jsx
     private String lastUpdated;    // alias used by LowStockAlerts.jsx
+    private LocalDateTime createdAt;
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
     public String getMedicineName()  { return medicineName; }
     public void setMedicineName(String medicineName) { this.medicineName = medicineName; }
@@ -71,8 +82,20 @@ public class MedicineDTO {
     public void setMedicineCode(String medicineCode) { this.medicineCode = medicineCode; }
     public String getSupplierVendor() { return supplierVendor; }
     public void setSupplierVendor(String supplierVendor) { this.supplierVendor = supplierVendor; }
+    public Long getSupplierId() { return supplierId; }
+    public void setSupplierId(Long supplierId) { this.supplierId = supplierId; }
+    public String getSupplierAddress() { return supplierAddress; }
+    public void setSupplierAddress(String supplierAddress) { this.supplierAddress = supplierAddress; }
+    public String getSupplierGstin() { return supplierGstin; }
+    public void setSupplierGstin(String supplierGstin) { this.supplierGstin = supplierGstin; }
+    public String getSupplierContact() { return supplierContact; }
+    public void setSupplierContact(String supplierContact) { this.supplierContact = supplierContact; }
+    public String getProductType() { return productType; }
+    public void setProductType(String productType) { this.productType = productType; }
     public String getPackSize() { return packSize; }
     public void setPackSize(String packSize) { this.packSize = packSize; }
+    public Integer getUnitsPerPack() { return unitsPerPack; }
+    public void setUnitsPerPack(Integer unitsPerPack) { this.unitsPerPack = unitsPerPack; }
     public BigDecimal getMrp() { return mrp; }
     public void setMrp(BigDecimal mrp) { this.mrp = mrp; }
     public BigDecimal getPurchasePrice() { return purchasePrice; }

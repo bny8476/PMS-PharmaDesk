@@ -65,3 +65,8 @@
     print-color-adjust: exact !important;
   }
 }
+
+/* React DatePicker Global Fix */
+.react-datepicker-popper {
+  z-index: 50 !important;
+}

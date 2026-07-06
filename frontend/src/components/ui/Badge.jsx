@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { cn } from '../../utils/cn';
 
 const variants = {
@@ -20,3 +21,9 @@ export default function Badge({ children, variant = 'default', className }) {
     </span>
   );
 }
+
+Badge.propTypes = {
+  children: PropTypes.node.isRequired,
+  variant: PropTypes.oneOf(['success', 'warning', 'danger', 'info', 'default']),
+  className: PropTypes.string,
+};

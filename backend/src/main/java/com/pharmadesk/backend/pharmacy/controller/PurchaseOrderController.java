@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.PurchaseOrder;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -68,7 +69,7 @@ public class PurchaseOrderController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<PurchaseOrder>> create(@RequestBody PurchaseOrder po) {
+    public ResponseEntity<ApiResponse<PurchaseOrder>> create(@Valid @RequestBody PurchaseOrder po) {
         return ResponseEntity.ok(ApiResponse.success(service.createPO(po), "PO created successfully"));
     }
 

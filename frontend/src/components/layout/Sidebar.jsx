@@ -12,7 +12,7 @@ import {
   FileText, AlertTriangle, CalendarX, ShieldAlert, Thermometer,
   ShieldCheck, ScanBarcode, Shield, PlusCircle, Calendar,
   TrendingUp, ClipboardCheck, FilePlus, ShoppingBag, BarChart2, UserCog, Zap, Package,
-  UserCircle, KeyRound, Menu
+  UserCircle, KeyRound, Menu, UserRound
 } from 'lucide-react';
 
 const NAV_BY_ROLE = {
@@ -29,6 +29,7 @@ const NAV_BY_ROLE = {
     { name: 'Purchase Orders',         path: '/purchase-orders',      icon: ShoppingBag },
     { name: 'GRN Entry',               path: '/grn',                  icon: Truck },
     { name: 'Suppliers',               path: '/suppliers',            icon: Building2 },
+    { name: 'Doctors',                 path: '/doctors',              icon: UserRound },
     { name: 'Patients',                path: '/patients',             icon: Users },
     { name: 'Low Stock Alerts',        path: '/low-stock-alerts',     icon: AlertTriangle },
     { name: 'Expiry Tracker',          path: '/expiry-tracker',       icon: Calendar },
@@ -79,6 +80,7 @@ const NAV_BY_ROLE = {
     { name: 'Purchase Orders',         path: '/purchase-orders',      icon: ShoppingBag },
     { name: 'GRN Entry',               path: '/grn',                  icon: Truck },
     { name: 'Suppliers',               path: '/suppliers',            icon: Building2 },
+    { name: 'Doctors',                 path: '/doctors',              icon: UserRound },
     { name: 'Low Stock Alerts',        path: '/low-stock-alerts',     icon: AlertTriangle },
     { name: 'Expiry Tracker',          path: '/expiry-tracker',       icon: Calendar },
     { name: 'Temperature Logs',        path: '/temperature-logs',     icon: Thermometer },
@@ -126,10 +128,14 @@ const NAV_BY_ROLE = {
   ]
 };
 
+import { useQueryClient } from '@tanstack/react-query';
+import pharmacyService from '../../utils/pharmacyService';
+
 export default function Sidebar({ isOpen, setIsOpen, isCollapsed, setIsCollapsed }) {
   const { user, roles, activeRole, switchRole, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
   const [isRoleDropdownOpen, setIsRoleDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
 
@@ -146,6 +152,32 @@ export default function Sidebar({ isOpen, setIsOpen, isCollapsed, setIsCollapsed
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const getPrefetchConfig = (path) => {
+    switch (path) {
+      case '/medicines': return { key: ['medicines', { page: 0, size: 20 }], url: '/pharmacy/medicines' };
+      case '/stocks': return { key: ['stocks', { page: 0, size: 20 }], url: '/pharmacy/stocks' };
+      case '/patients': return { key: ['patients', { page: 0, size: 20 }], url: '/pharmacy/patients' };
+      case '/suppliers': return { key: ['suppliers', { page: 0, size: 20 }], url: '/pharmacy/suppliers' };
+      case '/sales': return { key: ['sales', { page: 0, size: 20 }], url: '/pharmacy/sales' };
+      case '/purchase-orders': return { key: ['purchase-orders', { page: 0, size: 20 }], url: '/pharmacy/purchase-orders' };
+      default: return null;
+    }
+  };
+
+  const handlePrefetch = (path) => {
+    const config = getPrefetchConfig(path);
+    if (!config) return;
+    
+    const state = queryClient.getQueryState(config.key);
+    if (!state || state.isStale) {
+      queryClient.prefetchQuery({
+        queryKey: config.key,
+        queryFn: () => pharmacyService.api.get(config.url, { params: { page: 0, size: 20 } }).then(res => res.data?.data?.content || res.data?.content || res.data || []),
+        staleTime: 10000 // 10s to prevent spamming on rapid hover
+      });
+    }
   };
 
   const getInitials = (name) => {
@@ -256,6 +288,7 @@ export default function Sidebar({ isOpen, setIsOpen, isCollapsed, setIsCollapsed
                   setIsOpen(false);
                 }
               }}
+              onMouseEnter={() => handlePrefetch(item.path)}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 text-sm transition-all duration-300 group",
                 isActive 

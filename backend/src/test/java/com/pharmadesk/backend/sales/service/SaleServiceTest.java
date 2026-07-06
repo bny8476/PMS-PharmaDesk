@@ -20,6 +20,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 
 import java.math.BigDecimal;
@@ -53,7 +55,11 @@ public class SaleServiceTest {
     @Mock
     private StockAlertService alertService;
 
-    @InjectMocks
+    @Mock
+    private com.pharmadesk.backend.pharmacy.repository.PrescriptionRepository prescriptionRepository;
+
+    private MeterRegistry meterRegistry = new SimpleMeterRegistry();
+
     private SaleService saleService;
 
     private Medicine testMedicine;
@@ -61,9 +67,15 @@ public class SaleServiceTest {
     private SaleRequestDTO requestDTO;
     private SaleItemDTO itemDTO;
 
+    @Mock
+    private com.pharmadesk.backend.repository.DoctorRepository doctorRepository;
+
     @BeforeEach
     void setUp() {
-        TransactionSynchronizationManager.initSynchronization();
+        saleService = new SaleService(
+            stockRepository, billRepository, creditBillRepository,
+            advanceRepository, medicineRepository, alertService, meterRegistry, prescriptionRepository, doctorRepository
+        );TransactionSynchronizationManager.initSynchronization();
 
         testMedicine = new Medicine();
         testMedicine.setId(10L);

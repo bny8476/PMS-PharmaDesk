@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.NarcoticRegister;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -51,7 +52,7 @@ public class NarcoticRegisterController {
 
     @PostMapping("/entry")
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_SUPERVISOR','ROLE_PHARMACY_STAFF')")
-    public ResponseEntity<ApiResponse<NarcoticRegister>> createEntry(@RequestBody NarcoticRegister entry) {
+    public ResponseEntity<ApiResponse<NarcoticRegister>> createEntry(@Valid @RequestBody NarcoticRegister entry) {
         // Validation and opening/closing balance calculation
         var medicine = medicineRepository.findById(entry.getMedicine().getId())
                 .orElseThrow(() -> new RuntimeException("Medicine not found"));

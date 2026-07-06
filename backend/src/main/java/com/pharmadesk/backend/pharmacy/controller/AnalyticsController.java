@@ -47,4 +47,37 @@ public class AnalyticsController {
         com.pharmadesk.backend.pharmacy.dto.analytics.MonthOverMonthDTO data = analyticsService.getMonthOverMonthComparison(monthAStart, monthAEnd, monthBStart, monthBEnd);
         return ResponseEntity.ok(ApiResponse.success(data, "Month over Month comparison retrieved successfully"));
     }
+
+    @GetMapping("/stocks/movement")
+    public ResponseEntity<ApiResponse<com.pharmadesk.backend.pharmacy.dto.analytics.StockMovementInsightsDTO>> getStockMovementInsights(
+            @RequestParam(value = "startDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startDate,
+            @RequestParam(value = "endDate", required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endDate,
+            @RequestParam(value = "limit", defaultValue = "50") int limit) {
+        
+        if (endDate == null) endDate = LocalDateTime.now();
+        if (startDate == null) startDate = endDate.minusDays(30);
+
+        com.pharmadesk.backend.pharmacy.dto.analytics.StockMovementInsightsDTO dto = new com.pharmadesk.backend.pharmacy.dto.analytics.StockMovementInsightsDTO();
+        
+        java.util.List<com.pharmadesk.backend.pharmacy.dto.analytics.MedicineStatsDTO> topMoving = analyticsService.getFastMovingMedicines(startDate, endDate, limit);
+        java.util.List<com.pharmadesk.backend.pharmacy.dto.analytics.MedicineStatsDTO> topNonMoving = analyticsService.getSlowMovingMedicines(startDate, endDate, limit);
+        
+        dto.setTopMoving(topMoving);
+        dto.setTopNonMoving(topNonMoving);
+        
+        java.math.BigDecimal movingVal = topMoving.stream()
+                .map(com.pharmadesk.backend.pharmacy.dto.analytics.MedicineStatsDTO::getStockValueLocked)
+                .filter(java.util.Objects::nonNull)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                
+        java.math.BigDecimal nonMovingVal = topNonMoving.stream()
+                .map(com.pharmadesk.backend.pharmacy.dto.analytics.MedicineStatsDTO::getStockValueLocked)
+                .filter(java.util.Objects::nonNull)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+                
+        dto.setMovingValue(movingVal);
+        dto.setNonMovingValue(nonMovingVal);
+
+        return ResponseEntity.ok(ApiResponse.success(dto, "Stock movement insights retrieved successfully"));
+    }
 }

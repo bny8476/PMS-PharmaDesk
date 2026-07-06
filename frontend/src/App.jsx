@@ -8,24 +8,12 @@ import { Suspense, lazy } from 'react';
 import RoleGuard from './components/auth/RoleGuard';
 import { ROLES, DASHBOARD_ROUTES, getBaseRoleForUI } from './config/roles.config';
 import { useAuth } from './context/AuthContext';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 60_000,
-      gcTime: 5 * 60_000,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: true,
-      retry: 1,
-    },
-  },
-});
 // Eager load critical pages to avoid Suspense hangs during auth flow
 import LoginPage from './pages/LoginPage';
-import AdminDashboard from './pages/AdminDashboard';
-import PharmacyDashboard from './pages/PharmacyDashboard';
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const PharmacyDashboard = lazy(() => import('./pages/PharmacyDashboard'));
 
 // Lazy load other modules
 const PharmacySales = lazy(() => import('./pages/PharmacySales'));
@@ -54,6 +42,7 @@ const StorekeeperDashboard = lazy(() => import('./pages/StorekeeperDashboard'));
 const MedicalDashboard = lazy(() => import('./pages/MedicalDashboard'));
 const SupervisorDashboard = lazy(() => import('./pages/SupervisorDashboard'));
 const Suppliers = lazy(() => import('./pages/Suppliers'));
+const Doctors = lazy(() => import('./pages/Doctors'));
 const Patients = lazy(() => import('./pages/Patients'));
 const Reports = lazy(() => import('./pages/Reports'));
 const PurchaseOrders = lazy(() => import('./pages/PurchaseOrders'));
@@ -73,6 +62,7 @@ import AnalyticsDashboard from './pages/analytics/AnalyticsDashboard';
 const ForceChangePasswordPage = lazy(() => import('./pages/ForceChangePasswordPage'));
 import ABCAnalysis from './pages/analytics/ABCAnalysis';
 import MonthOverMonth from './pages/analytics/MonthOverMonth';
+import SupplierAnalytics from './pages/analytics/SupplierAnalytics';
 const ProfileSettings = lazy(() => import('./pages/ProfileSettings'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
@@ -85,7 +75,6 @@ const RootRedirect = () => {
     if (loading) return;
 
     if (!isAuthenticated) {
-      console.log('RootRedirect: Not authenticated, to /login');
       if (location.pathname !== '/login') {
         navigate('/login', { replace: true });
       }
@@ -97,10 +86,7 @@ const RootRedirect = () => {
     const baseRole = getBaseRoleForUI(roleToUse);
     const target = DASHBOARD_ROUTES[baseRole] || '/dashboard/pharmacy';
 
-    console.log('RootRedirect: Authenticated, target is', target, 'current is', location.pathname);
-    
     if (location.pathname !== target) {
-      console.log('RootRedirect: Redirecting to', target);
       navigate(target, { replace: true });
     }
   }, [loading, isAuthenticated, activeRole, roles, navigate, location.pathname]);
@@ -117,8 +103,7 @@ const LoadingFallback = () => (
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
+    <AuthProvider>
               <BrowserRouter>
                 <Toaster position="top-right" reverseOrder={false} />
                 <ErrorBoundary>
@@ -230,6 +215,11 @@ function App() {
                   <Patients />
                 </RoleGuard>
               } />
+              <Route path="doctors" element={
+                <RoleGuard allowedRoles={[ROLES.SYSTEM_ADMIN, ROLES.BILLING_STAFF, ROLES.RECEPTIONIST]}>
+                  <Doctors />
+                </RoleGuard>
+              } />
               <Route path="reports" element={
                 <RoleGuard allowedRoles={[ROLES.SYSTEM_ADMIN, ROLES.SUPERVISOR, ROLES.AUDIT_COMPLIANCE]}>
                   <Reports />
@@ -291,6 +281,7 @@ function App() {
                 <Route index element={<AnalyticsDashboard />} />
                 <Route path="abc" element={<ABCAnalysis />} />
                 <Route path="mom" element={<MonthOverMonth />} />
+                <Route path="supplier" element={<SupplierAnalytics />} />
               </Route>
               
               <Route path="profile" element={<ProfileSettings />} />
@@ -305,7 +296,6 @@ function App() {
                 </ErrorBoundary>
               </BrowserRouter>
             </AuthProvider>
-    </QueryClientProvider>
   );
 }
 

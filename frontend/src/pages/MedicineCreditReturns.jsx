@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Search, Plus, Eye, Printer, RotateCcw } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -9,66 +10,90 @@ import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
 
-const initialMockCreditReturns = [
-  { id: 1, returnNo: 'CRET-101', billNo: 'CB-2201', patient: 'Karan Mehra', date: '16-Apr-2026', amount: 450.00, status: 'Completed' },
-];
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function MedicineCreditReturns() {
   const location = useLocation();
-  const [returns, setReturns] = useState(initialMockCreditReturns);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    // Re-fetch logic would go here if not using mocks
-    console.log('Refreshing Credit Returns for route:', location.key);
-  }, [location.key]);
+  const { items: creditReturns = [], isLoading: loading } = usePageData(
+    'credit-returns',
+    '/pharmacy/returns?type=CREDIT'
+  );
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [returnToDelete, setReturnToDelete] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // New Credit Return form state
   const [creditBillNo, setCreditBillNo] = useState('');
   const [selectedBill, setSelectedBill] = useState(null);
 
-  const fetchBill = async () => {
-    if (!creditBillNo) return;
-    try {
-      // Re-using common sale search since credit bills are just sales with billType=CREDIT
-      const res = await pharmacyService.getSaleByNumber(creditBillNo);
+  const fetchBillMutation = useMutation({
+    mutationFn: (billNo) => pharmacyService.getSaleByNumber(billNo),
+    onSuccess: (res) => {
       if (res.success) {
         setSelectedBill(res.data);
         toast.success('Bill items loaded');
+      } else {
+        toast.error('Credit bill not found');
       }
-    } catch (e) { toast.error('Credit bill not found'); }
+    },
+    onError: () => toast.error('Credit bill not found')
+  });
+
+  const fetchBill = () => {
+    if (!creditBillNo) return;
+    fetchBillMutation.mutate(creditBillNo);
   };
+
+  const saveReturnMutation = useMutation({
+    mutationFn: (newRet) => {
+      // Assuming pharmacyService.initiateReturn is the correct API
+      return pharmacyService.initiateReturn(selectedBill.id, newRet.items, newRet.reason);
+    },
+    onSuccess: () => {
+      toast.success('Credit Return saved successfully!');
+      setIsModalOpen(false);
+      resetForm();
+      queryClient.invalidateQueries(['credit-returns']);
+    },
+    onError: () => {
+      toast.error('Failed to save Credit Return');
+    }
+  });
 
   const saveReturn = () => {
     if (!selectedBill) { toast.error('Please load a bill first'); return; }
     
-    const newRet = {
-      id: returns.length + 1,
-      returnNo: `CRET-${100 + returns.length + 1}`,
-      billNo: selectedBill.billNumber,
-      patient: selectedBill.patientName,
-      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-      amount: 450.00, // Simplified for now
-      status: 'Completed'
-    };
-    
-    setReturns([newRet, ...returns]);
-    toast.success('Credit Return saved successfully!');
-    setIsModalOpen(false);
-    resetForm();
+    // Using mock logic for items temporarily as the form isn't fully implemented with item selection state yet
+    const itemsToReturn = selectedBill.items?.map(item => ({ poItemId: item.id, quantity: 1 })) || [];
+    saveReturnMutation.mutate({ items: itemsToReturn, reason: 'Credit Return' });
   };
 
+  const deleteReturnMutation = useMutation({
+    mutationFn: (id) => pharmacyService.rejectReturn(id), // Assuming reject cancels it
+    onSuccess: () => {
+      toast.success('Return record deleted');
+      setIsDeleteModalOpen(false);
+      setReturnToDelete(null);
+      queryClient.invalidateQueries(['credit-returns']);
+    },
+    onError: () => toast.error('Failed to delete return record')
+  });
+
   const confirmDelete = () => {
-    setReturns(returns.filter(r => r.id !== returnToDelete));
-    toast.success('Return record deleted');
-    setIsDeleteModalOpen(false);
-    setReturnToDelete(null);
+    deleteReturnMutation.mutate(returnToDelete);
   };
 
   const resetForm = () => {
@@ -103,14 +128,14 @@ export default function MedicineCreditReturns() {
     )}
   ];
 
-  const filteredReturns = returns.filter(r => {
-    const s = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
-      r.returnNo.toLowerCase().includes(s) || 
-      r.billNo.toLowerCase().includes(s) || 
-      r.patient.toLowerCase().includes(s);
+  const filteredReturns = creditReturns.filter(r => {
+    const s = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
+      r.returnNo?.toLowerCase().includes(s) || 
+      r.billNo?.toLowerCase().includes(s) || 
+      r.patient?.toLowerCase().includes(s);
 
-    const retDate = new Date(r.date);
+    const retDate = new Date(r.date || new Date());
     const normalizedRetDate = new Date(retDate.getFullYear(), retDate.getMonth(), retDate.getDate()).getTime();
     const matchesFrom = !dateRange.from || normalizedRetDate >= new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate()).getTime();
     const matchesTo = !dateRange.to || normalizedRetDate <= new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate()).getTime();
@@ -125,7 +150,7 @@ export default function MedicineCreditReturns() {
         <p className="text-sm text-gray-500 font-medium">Process returns for medicines sold on credit</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -136,8 +161,14 @@ export default function MedicineCreditReturns() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredReturns} hover striped />
-        <Pagination totalRecords={filteredReturns.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={8} />
+        ) : (
+          <>
+            <DataTable columns={columns} data={pageSize === 'All' ? filteredReturns : filteredReturns.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+            <Pagination totalRecords={filteredReturns.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       <AppModal 
@@ -148,8 +179,8 @@ export default function MedicineCreditReturns() {
         footer={
           <div className="flex gap-3">
              <button onClick={() => { setIsModalOpen(false); resetForm(); }} className="px-6 py-2 border border-gray-300 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all font-display">Cancel</button>
-             <button onClick={saveReturn} className="px-8 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-200 hover:bg-red-700 transition-all flex items-center gap-2 font-display">
-                <RotateCcw className="w-4 h-4"/> Save Return
+             <button onClick={saveReturn} disabled={saveReturnMutation.isPending} className="px-8 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-red-200 hover:bg-red-700 transition-all flex items-center gap-2 font-display disabled:opacity-50">
+                <RotateCcw className="w-4 h-4"/> {saveReturnMutation.isPending ? 'Saving...' : 'Save Return'}
              </button>
           </div>
         }
@@ -169,7 +200,9 @@ export default function MedicineCreditReturns() {
                  <Search className="w-4 h-4 absolute right-4 top-4 text-slate-300" />
                </div>
             </div>
-            <button onClick={fetchBill} className="px-6 py-3.5 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg">Fetch Items</button>
+            <button onClick={fetchBill} disabled={fetchBillMutation.isPending} className="px-6 py-3.5 bg-slate-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg disabled:opacity-50">
+              {fetchBillMutation.isPending ? 'Fetching...' : 'Fetch Items'}
+            </button>
           </div>
 
           {!selectedBill ? (
@@ -192,24 +225,19 @@ export default function MedicineCreditReturns() {
                    </div>
                 </div>
                 <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                   <table className="w-full text-sm">
-                     <thead className="bg-[#1e293b] text-white text-[10px] uppercase tracking-widest">
-                       <tr>
-                         <th className="px-4 py-3 text-left">Medicine</th>
-                         <th className="px-4 py-3 text-center w-32">Return Qty</th>
-                         <th className="px-4 py-3 text-right">Refund</th>
-                       </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-50 bg-white">
-                        {selectedBill.items?.map(item => (
-                          <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                             <td className="px-4 py-4 font-bold text-slate-700">{item.stock?.medicine?.name}</td>
-                             <td className="px-4 py-4"><input type="number" defaultValue="1" className="w-full text-center border rounded-lg py-1 outline-none focus:border-red-500 font-bold text-red-600" /></td>
-                             <td className="px-4 py-4 text-right font-black text-slate-900">₹{item.unitPrice.toFixed(2)}</td>
-                          </tr>
-                        ))}
-                     </tbody>
-                   </table>
+                   <DataTable 
+                     columns={[
+                       { header: 'Medicine', render: (item) => <span className="font-bold text-slate-700">{item.stock?.medicine?.name}</span> },
+                       {
+                         header: <div className="text-center w-32">Return Qty</div>,
+                         render: () => <input type="number" defaultValue="1" className="w-full text-center border rounded-lg py-1 outline-none focus:border-red-500 font-bold text-red-600" />
+                       },
+                       { header: <div className="text-right">Refund</div>, render: (item) => <span className="text-right font-black text-slate-900 block">₹{item.unitPrice.toFixed(2)}</span> }
+                     ]}
+                     data={selectedBill.items || []}
+                     hover
+                     striped
+                   />
                 </div>
              </div>
           )}
@@ -259,7 +287,7 @@ export default function MedicineCreditReturns() {
         footer={
           <div className="flex gap-3 w-full">
             <button onClick={() => setIsDeleteModalOpen(false)} className="flex-1 px-6 py-2 border rounded-xl text-sm font-bold text-gray-500 hover:bg-gray-50">Cancel</button>
-            <button onClick={confirmDelete} className="flex-1 px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg hover:bg-red-700">Delete</button>
+            <button onClick={confirmDelete} disabled={deleteReturnMutation.isPending} className="flex-1 px-6 py-2 bg-red-600 text-white rounded-xl text-sm font-bold shadow-lg hover:bg-red-700 disabled:opacity-50">Delete</button>
           </div>
         }
       >

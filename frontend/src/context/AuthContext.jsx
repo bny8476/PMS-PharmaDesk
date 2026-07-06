@@ -187,14 +187,15 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     // Fire-and-forget API call to record logout timestamp on backend
     const token = localStorage.getItem('token');
     if (token) {
-      fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
-      }).catch(() => {}); // silently ignore failures
+      try {
+        await api.post('/auth/logout');
+      } catch (err) {
+        console.error('Logout error:', err);
+      }
     }
     localStorage.removeItem('token');
     localStorage.removeItem('user');

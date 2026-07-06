@@ -70,13 +70,25 @@ public class MedicineController {
 
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_PHARMACY_STAFF')")
     @PostMapping("/medicines")
-    public ResponseEntity<ApiResponse<Medicine>> createMedicine(@Valid @RequestBody Medicine medicine) {
-        if (medicine.getMedicineCode() == null || medicine.getMedicineCode().trim().isEmpty()) {
-            long count = medicineRepository.count();
-            medicine.setMedicineCode("MED-" + String.format("%04d", count + 1001));
+    public ResponseEntity<ApiResponse<MedicineDTO>> createMedicine(@Valid @RequestBody Medicine medicine) {
+        boolean autoGenerateCode = medicine.getMedicineCode() == null || medicine.getMedicineCode().trim().isEmpty();
+        if (autoGenerateCode) {
+            medicine.setMedicineCode(null);
         }
+        if (medicine.getBarcode() != null && medicine.getBarcode().trim().isEmpty()) {
+            medicine.setBarcode(null);
+        }
+        
         Medicine saved = medicineRepository.save(medicine);
-        return ResponseEntity.ok(ApiResponse.success(saved, "Medicine added successfully"));
+        
+        if (autoGenerateCode) {
+            saved.setMedicineCode(String.format("MED-%05d", saved.getId()));
+            saved = medicineRepository.save(saved);
+        }
+        
+        MedicineDTO dto = medicineMapper.toDto(saved);
+        dto.setCurrentStock(0);
+        return ResponseEntity.ok(ApiResponse.success(dto, "Medicine added successfully"));
     }
 
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_PHARMACY_STAFF')")
@@ -92,8 +104,10 @@ public class MedicineController {
             medicine.setTaxPercentage(medicineData.getTaxPercentage());
             medicine.setReorderLevel(medicineData.getReorderLevel());
             medicine.setReorderQuantity(medicineData.getReorderQuantity());
-            medicine.setBarcode(medicineData.getBarcode());
+            medicine.setBarcode((medicineData.getBarcode() != null && medicineData.getBarcode().trim().isEmpty()) ? null : medicineData.getBarcode());
             medicine.setSupplierVendor(medicineData.getSupplierVendor());
+            medicine.setSupplier(medicineData.getSupplier());
+            medicine.setProductType(medicineData.getProductType());
             medicine.setPackSize(medicineData.getPackSize());
             medicine.setMrp(medicineData.getMrp());
             medicine.setPurchasePrice(medicineData.getPurchasePrice());
@@ -111,6 +125,17 @@ public class MedicineController {
                     .sum());
             
             return ResponseEntity.ok(ApiResponse.success(dto, "Medicine updated successfully"));
+        }).orElse(ResponseEntity.notFound().build());
+    }
+
+    @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_PHARMACY_STAFF')")
+    @DeleteMapping("/medicines/{id}")
+    @org.springframework.transaction.annotation.Transactional
+    public ResponseEntity<ApiResponse<Void>> deleteMedicine(@PathVariable Long id) {
+        return medicineRepository.findById(id).map(medicine -> {
+            medicine.setDeleted(true);
+            medicineRepository.save(medicine);
+            return ResponseEntity.ok(ApiResponse.<Void>success(null, "Medicine deleted successfully"));
         }).orElse(ResponseEntity.notFound().build());
     }
 

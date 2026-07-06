@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.SupplierInvoice;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -37,7 +38,7 @@ public class SupplierInvoiceController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<SupplierInvoice>> create(@RequestBody SupplierInvoice invoice) {
+    public ResponseEntity<ApiResponse<SupplierInvoice>> create(@Valid @RequestBody SupplierInvoice invoice) {
         return ResponseEntity.ok(ApiResponse.success(invoiceService.createInvoice(invoice), "Invoice created"));
     }
 

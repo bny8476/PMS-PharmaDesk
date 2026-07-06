@@ -2,42 +2,33 @@ package com.pharmadesk.backend.controller;
 
 import com.pharmadesk.backend.model.ActivityLog;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
-import com.pharmadesk.backend.repository.ActivityLogRepository;
+import com.pharmadesk.backend.service.ActivityLogService;
+import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-
+/**
+ * REST controller for activity log queries.
+ * Business logic is delegated to {@link ActivityLogService}.
+ */
 @RestController
 @RequestMapping("/api/activity-log")
 public class ActivityLogController {
 
-    private final ActivityLogRepository activityLogRepository;
+    private final ActivityLogService activityLogService;
 
-    public ActivityLogController(ActivityLogRepository activityLogRepository) {
-        this.activityLogRepository = activityLogRepository;
+    public ActivityLogController(ActivityLogService activityLogService) {
+        this.activityLogService = activityLogService;
     }
 
     @GetMapping
-    public ResponseEntity<ApiResponse<org.springframework.data.domain.Page<ActivityLog>>> getLogsByUserId(
+    public ResponseEntity<ApiResponse<Page<ActivityLog>>> getLogsByUserId(
             @RequestParam Long userId,
             @RequestParam(required = false) String date,
-            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "0")  int page,
             @RequestParam(defaultValue = "10") int size) {
-        
-        org.springframework.data.domain.Pageable pageable = org.springframework.data.domain.PageRequest.of(page, size);
-        org.springframework.data.domain.Page<ActivityLog> logs;
-        
-        if (date != null && date.equals("today")) {
-            LocalDateTime startOfDay = LocalDate.now().atStartOfDay();
-            LocalDateTime endOfDay = LocalDateTime.now();
-            logs = activityLogRepository.findByUserIdAndCreatedAtBetweenOrderByCreatedAtDesc(userId, startOfDay, endOfDay, pageable);
-        } else {
-            logs = activityLogRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
-        }
-        
+
+        Page<ActivityLog> logs = activityLogService.getLogs(userId, date, page, size);
         return ResponseEntity.ok(ApiResponse.success(logs, "Activity logs fetched"));
     }
 }

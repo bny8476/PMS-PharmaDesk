@@ -26,6 +26,10 @@ public class SaleRequestDTO {
     public String getDoctorName() { return doctorName; }
     public void setDoctorName(String doctorName) { this.doctorName = doctorName; }
 
+    private Long doctorId;
+    public Long getDoctorId() { return doctorId; }
+    public void setDoctorId(Long doctorId) { this.doctorId = doctorId; }
+
     @NotEmpty(message = "Sale must have at least one item")
     @Valid
     private List<SaleItemDTO> items;

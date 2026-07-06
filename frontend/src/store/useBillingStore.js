@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import pharmacyService from '../utils/pharmacyService';
 import { toast } from 'react-hot-toast';
 
-export const useBillingStore = create((set, get) => ({
+export const useBillingStore = create((set) => ({
   // Credit Bills State
   creditBillsList: [],
   creditBillsLoading: false,
@@ -33,9 +33,26 @@ export const useBillingStore = create((set, get) => ({
       const cRes = await pharmacyService.getInsuranceClaims();
       const pRes = await pharmacyService.getInsuranceProviders();
       
+      const getArray = (res) => {
+        if (!res) return [];
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res.data)) return res.data;
+        if (res.data && Array.isArray(res.data.content)) return res.data.content;
+        return [];
+      };
+
+      const rawClaims = getArray(cRes);
+      const mappedClaims = rawClaims.map(c => ({
+        ...c,
+        id: c.claimId || c.id,
+        status: c.claimStatus || c.status,
+        policyNumber: c.insurancePolicyNumber || c.policyNumber,
+        coPayAmount: c.nonCoveredAmount || c.coPayAmount
+      }));
+
       set({
-        claims: cRes.data || cRes || [],
-        providers: pRes.data || pRes || [],
+        claims: mappedClaims,
+        providers: getArray(pRes),
         claimsLoading: false
       });
     } catch {

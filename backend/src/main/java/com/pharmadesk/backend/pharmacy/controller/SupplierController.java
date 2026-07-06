@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.Supplier;
 import com.pharmadesk.backend.model.SupplierPerformance;
@@ -31,14 +32,14 @@ public class SupplierController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<Supplier>> createSupplier(@RequestBody Supplier supplier) {
+    public ResponseEntity<ApiResponse<Supplier>> createSupplier(@Valid @RequestBody Supplier supplier) {
         Supplier createdSupplier = supplierService.createSupplier(supplier);
         return ResponseEntity.ok(ApiResponse.success(createdSupplier, "Supplier created successfully"));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<Supplier>> updateSupplier(@PathVariable Long id, @RequestBody Supplier supplier) {
+    public ResponseEntity<ApiResponse<Supplier>> updateSupplier(@PathVariable Long id, @Valid @RequestBody Supplier supplier) {
         Supplier updatedSupplier = supplierService.updateSupplier(id, supplier);
         return ResponseEntity.ok(ApiResponse.success(updatedSupplier, "Supplier updated successfully"));
     }

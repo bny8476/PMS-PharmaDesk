@@ -73,6 +73,16 @@ public class Medicine extends BaseEntity {
     @Column(name = "substitutes")
     private String substitutes; // Comma separated list of medicine IDs
 
+    @Column(name = "units_per_pack", columnDefinition = "INT DEFAULT 1")
+    private Integer unitsPerPack = 1;
+
+    @Column(name = "product_type", length = 50)
+    private String productType = "MEDICINE";
+
+    @jakarta.persistence.ManyToOne
+    @jakarta.persistence.JoinColumn(name = "supplier_id")
+    private Supplier supplier;
+
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
@@ -114,4 +124,10 @@ public class Medicine extends BaseEntity {
     public void setSchedule(String schedule) { this.schedule = schedule; }
     public String getSubstitutes() { return substitutes; }
     public void setSubstitutes(String substitutes) { this.substitutes = substitutes; }
+    public Integer getUnitsPerPack() { return unitsPerPack; }
+    public void setUnitsPerPack(Integer unitsPerPack) { this.unitsPerPack = unitsPerPack; }
+    public String getProductType() { return productType; }
+    public void setProductType(String productType) { this.productType = productType; }
+    public Supplier getSupplier() { return supplier; }
+    public void setSupplier(Supplier supplier) { this.supplier = supplier; }
 }

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import AppModal from './AppModal';
 import { Users, Shield } from 'lucide-react';
 import { MODULE_PERMISSIONS, getRoleColor } from '../../config/roles.config';
 import api from '../../utils/api';
 import { toast } from 'react-hot-toast';
+import FormInput from './FormInput';
 
 export default function UserFormModal({ isOpen, onClose, onSave, editingUser = null }) {
   const [availableRoles, setAvailableRoles] = useState([]);
@@ -120,118 +122,85 @@ export default function UserFormModal({ isOpen, onClose, onSave, editingUser = n
         {/* Left Side: Form Fields */}
         <div className="flex-1 space-y-4 pr-2">
            <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1.5 col-span-2">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Full Name *</label>
-                  <input 
-                    type="text" 
-                    value={formData.name}
-                    onChange={(e) => setFormData({...formData, name: e.target.value})}
-                    placeholder="e.g. Rahul Sharma" 
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold" 
-                  />
-               </div>
-               
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Username *</label>
-                  <input 
-                    type="text" 
-                    value={formData.username}
-                    onChange={(e) => setFormData({...formData, username: e.target.value})}
-                    disabled={!!editingUser}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold disabled:bg-slate-50 disabled:text-slate-400" 
-                  />
-               </div>
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Password {editingUser ? '(Leave empty to keep)' : '*'}</label>
-                  <input 
-                    type="password" 
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    placeholder="••••••••" 
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold" 
-                  />
-               </div>
-               
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Employee ID</label>
-                  <input 
-                    type="text" 
-                    value={formData.employeeId}
-                    onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold" 
-                  />
-               </div>
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Email</label>
-                  <input 
-                    type="email" 
-                    value={formData.email}
-                    onChange={(e) => setFormData({...formData, email: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold" 
-                  />
-               </div>
-
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Phone</label>
-                  <input 
-                    type="text" 
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold" 
-                  />
-               </div>
-               
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Branch</label>
-                  <select 
-                    value={formData.branch}
-                    onChange={(e) => setFormData({...formData, branch: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold"
-                  >
-                    <option value="MAIN_HOSPITAL">Main Hospital</option>
-                    <option value="CLINIC_A">Clinic A</option>
-                    <option value="CLINIC_B">Clinic B</option>
-                  </select>
-               </div>
-
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Shift</label>
-                  <select 
-                    value={formData.shift}
-                    onChange={(e) => setFormData({...formData, shift: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold"
-                  >
-                    <option value="MORNING">Morning</option>
-                    <option value="EVENING">Evening</option>
-                    <option value="NIGHT">Night</option>
-                    <option value="ROTATING">Rotating</option>
-                  </select>
-               </div>
-
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Status</label>
-                  <select 
-                    value={formData.status}
-                    onChange={(e) => setFormData({...formData, status: e.target.value})}
-                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold"
-                  >
-                    <option value="ACTIVE">Active</option>
-                    <option value="INACTIVE">Inactive</option>
-                    <option value="SUSPENDED">Suspended</option>
-                  </select>
-               </div>
+              <FormInput
+                label="Full Name *"
+                value={formData.name}
+                onChange={e => setFormData({...formData, name: e.target.value})}
+                placeholder="e.g. Rahul Sharma"
+                containerClassName="col-span-2"
+              />
+              <FormInput
+                label="Username *"
+                value={formData.username}
+                onChange={e => setFormData({...formData, username: e.target.value})}
+                disabled={!!editingUser}
+              />
+              <FormInput
+                type="password"
+                label={`Password ${editingUser ? '(Leave empty to keep)' : '*'}`}
+                value={formData.password}
+                onChange={e => setFormData({...formData, password: e.target.value})}
+                placeholder="••••••••"
+              />
+              <FormInput
+                label="Employee ID"
+                value={formData.employeeId || ''}
+                onChange={e => setFormData({...formData, employeeId: e.target.value})}
+              />
+              <FormInput
+                type="email"
+                label="Email"
+                value={formData.email}
+                onChange={e => setFormData({...formData, email: e.target.value})}
+              />
+              <FormInput
+                label="Phone"
+                value={formData.phone}
+                onChange={e => setFormData({...formData, phone: e.target.value})}
+              />
+              <FormInput
+                type="select"
+                label="Branch"
+                value={formData.branch}
+                onChange={e => setFormData({...formData, branch: e.target.value})}
+                options={[
+                  { value: 'MAIN_HOSPITAL', label: 'Main Hospital' },
+                  { value: 'CLINIC_A', label: 'Clinic A' },
+                  { value: 'CLINIC_B', label: 'Clinic B' }
+                ]}
+              />
+              <FormInput
+                type="select"
+                label="Shift"
+                value={formData.shift}
+                onChange={e => setFormData({...formData, shift: e.target.value})}
+                options={[
+                  { value: 'MORNING', label: 'Morning' },
+                  { value: 'EVENING', label: 'Evening' },
+                  { value: 'NIGHT', label: 'Night' },
+                  { value: 'ROTATING', label: 'Rotating' }
+                ]}
+              />
+              <FormInput
+                type="select"
+                label="Status"
+                value={formData.status}
+                onChange={e => setFormData({...formData, status: e.target.value})}
+                options={[
+                  { value: 'ACTIVE', label: 'Active' },
+                  { value: 'INACTIVE', label: 'Inactive' },
+                  { value: 'SUSPENDED', label: 'Suspended' }
+                ]}
+              />
            </div>
 
-            <div className="space-y-1.5 col-span-2">
-               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Profile Photo URL (Optional)</label>
-               <input 
-                 type="text" 
-                 value={formData.profilePhotoUrl || ''}
-                 onChange={(e) => setFormData({...formData, profilePhotoUrl: e.target.value})}
-                 placeholder="https://example.com/photo.jpg" 
-                 className="w-full px-4 py-2.5 rounded-xl border border-slate-200 outline-none focus:ring-2 focus:ring-primary/20 bg-white font-bold" 
-               />
-            </div>
+           <FormInput
+             label="Profile Photo URL (Optional)"
+             value={formData.profilePhotoUrl || ''}
+             onChange={e => setFormData({...formData, profilePhotoUrl: e.target.value})}
+             placeholder="https://example.com/photo.jpg"
+             containerClassName="col-span-2"
+           />
 
             <div className="space-y-2 col-span-2 mt-4">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">System Roles (Multi-Select)</label>
@@ -308,3 +277,22 @@ export default function UserFormModal({ isOpen, onClose, onSave, editingUser = n
     </AppModal>
   );
 }
+
+UserFormModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSave: PropTypes.func.isRequired,
+  editingUser: PropTypes.shape({
+    id: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    name: PropTypes.string,
+    username: PropTypes.string,
+    email: PropTypes.string,
+    phone: PropTypes.string,
+    branch: PropTypes.string,
+    shift: PropTypes.string,
+    status: PropTypes.string,
+    roles: PropTypes.arrayOf(PropTypes.string),
+    employeeId: PropTypes.string,
+    profilePhotoUrl: PropTypes.string,
+  }),
+};

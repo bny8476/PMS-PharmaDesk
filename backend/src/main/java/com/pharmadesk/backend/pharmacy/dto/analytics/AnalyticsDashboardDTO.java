@@ -10,6 +10,8 @@ public class AnalyticsDashboardDTO {
     private KPIDTO averageTransactionValue;
     private KPIDTO totalReturnsValue;
     private KPIDTO netRevenue;
+    private KPIDTO totalPurchases;
+    private KPIDTO estimatedProfitMargin;
 
     private List<MedicineStatsDTO> fastMovingMedicines;
     private List<MedicineStatsDTO> slowMovingMedicines;
@@ -42,4 +44,10 @@ public class AnalyticsDashboardDTO {
 
     public List<TrendDataDTO> getRevenueTrend() { return revenueTrend; }
     public void setRevenueTrend(List<TrendDataDTO> revenueTrend) { this.revenueTrend = revenueTrend; }
+
+    public KPIDTO getTotalPurchases() { return totalPurchases; }
+    public void setTotalPurchases(KPIDTO totalPurchases) { this.totalPurchases = totalPurchases; }
+
+    public KPIDTO getEstimatedProfitMargin() { return estimatedProfitMargin; }
+    public void setEstimatedProfitMargin(KPIDTO estimatedProfitMargin) { this.estimatedProfitMargin = estimatedProfitMargin; }
 }

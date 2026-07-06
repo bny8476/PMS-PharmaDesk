@@ -53,27 +53,26 @@ describe('AdminDashboard', () => {
 
   it('renders dashboard stats when data is loaded', async () => {
     useQuery.mockImplementation(({ queryKey }) => {
-      if (queryKey[0] === 'dashboard-stats') {
+      if (queryKey[0] === 'dashboard-kpis') {
         return { 
           data: { 
-            todaySales: 5000, 
-            billsToday: 10, 
-            pendingPrescriptions: 5, 
-            lowStockAlerts: 2, 
-            activeStaff: 3 
+            todayRevenue: 5000, 
+            totalSkus: 10, 
+            lowStockAlerts: 5, 
+            expiringIn30Days: 2, 
+            activePatientsToday: 3
           }, 
           isLoading: false 
         };
       }
-      if (queryKey[0] === 'dashboard-lowstock') return { data: [], isLoading: false };
-      if (queryKey[0] === 'dashboard-staff') return { data: [], isLoading: false };
-      if (queryKey[0] === 'dashboard-activity') return { data: [], isLoading: false };
+      if (queryKey[0] === 'dashboard-chart') return { data: [], isLoading: false };
+      if (queryKey[0] === 'dashboard-alerts') return { data: [], isLoading: false };
+      if (queryKey[0] === 'dashboard-revenue') return { data: { todayRevenue: 5000 }, isLoading: false };
       return { data: null, isLoading: false };
     });
 
     renderWithProviders(<AdminDashboard />);
-    
-    expect(screen.getByText('₹5,000')).toBeDefined();
+    expect(screen.getAllByText('₹5,000').length).toBeGreaterThan(0);
     // Use getAllByText if it might be duplicated, or just check the first one
     expect(screen.getByText('10')).toBeDefined();
     // For "5", let's check it's there

@@ -3,7 +3,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { ArrowLeft, Search, Package, CheckCircle2, AlertCircle, Plus, Trash2, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
-import { useSupplierStore } from '../store/useSupplierStore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import FormInput from '../components/ui/FormInput';
 
 const REJECTION_REASONS = ['Damaged', 'Wrong Item', 'Short Expiry', 'Quality Fail'];
 const EMPTY_ITEM = {
@@ -13,13 +14,17 @@ const EMPTY_ITEM = {
 };
 
 export default function GRNEntry({ onBack }) {
-  const {
-    suppliers,
-    fetchSuppliers
-  } = useSupplierStore(useShallow(state => ({
-    suppliers: state.suppliers,
-    fetchSuppliers: state.fetchSuppliers
-  })));
+  const queryClient = useQueryClient();
+
+  const { data: rawSuppliers = [] } = useQuery({
+    queryKey: ['suppliers-list'],
+    queryFn: async () => {
+      const res = await pharmacyService.getSuppliers();
+      const data = res.data || res;
+      return Array.isArray(data) ? data : [];
+    }
+  });
+  const suppliers = rawSuppliers;
   
   const [poSearch, setPoSearch] = useState('');
   const [po, setPo] = useState(null);
@@ -29,37 +34,35 @@ export default function GRNEntry({ onBack }) {
   const [invoiceDate, setInvoiceDate] = useState('');
   const [challanNumber, setChallanNumber] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchSuppliers();
-  }, [fetchSuppliers]);
-
-  const loadPo = async () => {
-    if (!poSearch.trim()) return;
-    setLoading(true);
-    try {
-      // Search by PO number from purchase-orders list
+  const poMutation = useMutation({
+    mutationFn: async () => {
       const res = await pharmacyService.api.get(`/pharmacy/purchase-orders?searchTerm=${poSearch}`);
       const page = res.data?.data;
       const found = page?.content?.[0] || null;
-      if (found) {
-        setPo(found);
-        setSelectedSupplierId(found.supplier?.id || '');
-        setItems(found.items?.map(i => ({
-          ...EMPTY_ITEM,
-          medicine: i.medicine,
-          poItemId: i.id,
-          orderedQuantity: i.quantity || 0,
-          purchaseRate: i.negotiatedPrice || i.estimatedUnitPrice || ''
-        })) || [EMPTY_ITEM]);
-        toast.success(`PO loaded: ${found.poNumber}`);
-      } else {
-        toast.error('No PO found with that number');
-      }
-    } catch { toast.error('Failed to load PO'); }
-    finally { setLoading(false); }
+      if (!found) throw new Error('No PO found with that number');
+      return found;
+    },
+    onSuccess: (found) => {
+      setPo(found);
+      setSelectedSupplierId(found.supplier?.id || '');
+      setItems(found.items?.map(i => ({
+        ...EMPTY_ITEM,
+        medicine: i.medicine,
+        poItemId: i.id,
+        orderedQuantity: i.quantity || 0,
+        purchaseRate: i.negotiatedPrice || i.estimatedUnitPrice || ''
+      })) || [EMPTY_ITEM]);
+      toast.success(`PO loaded: ${found.poNumber}`);
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Failed to load PO');
+    }
+  });
+
+  const loadPo = () => {
+    if (!poSearch.trim()) return;
+    poMutation.mutate();
   };
 
   const setItem = (idx, field, val) => {
@@ -69,49 +72,59 @@ export default function GRNEntry({ onBack }) {
   const addItem = () => setItems(prev => [...prev, { ...EMPTY_ITEM }]);
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx));
 
-  const handleSave = async (confirm = false) => {
-    if (!selectedSupplierId) { toast.error('Select a supplier'); return; }
-    if (items.some(it => !it.medicine && !it.medicineName)) { toast.error('Each item must have a medicine'); return; }
-
-    setSaving(true);
-    try {
-      const payload = {
-        supplier: { id: parseInt(selectedSupplierId) },
-        purchaseOrder: po ? { id: po.id } : null,
-        supplierInvoiceNumber: invoiceNumber,
-        invoiceDate: invoiceDate || null,
-        deliveryChallanNumber: challanNumber,
-        vehicleNumber,
-        status: 'DRAFT',
-        items: items.map(it => ({
-          medicine: it.medicine ? { id: it.medicine.id } : null,
-          poItemId: it.poItemId || null,
-          orderedQuantity: parseInt(it.orderedQuantity) || 0,
-          receivedQuantity: parseInt(it.receivedQuantity) || 0,
-          rejectedQuantity: parseInt(it.rejectedQuantity) || 0,
-          rejectionReason: it.rejectionReason || null,
-          batchNumber: it.batchNumber || null,
-          manufacturingDate: it.manufacturingDate || null,
-          expiryDate: it.expiryDate || null,
-          mrp: parseFloat(it.mrp) || null,
-          purchaseRate: parseFloat(it.purchaseRate) || null,
-        }))
-      };
-
+  const saveMutation = useMutation({
+    mutationFn: async ({ payload, confirm }) => {
       const created = await pharmacyService.createGrn(payload);
-      if (!created.success) throw new Error();
+      if (!created.success) throw new Error('GRN creation failed');
 
       if (confirm) {
         const confirmed = await pharmacyService.confirmGrn(created.data.id);
-        if (confirmed.success) toast.success('GRN confirmed! Stock updated.');
-        else toast.error('GRN created but stock update failed');
+        if (!confirmed.success) throw new Error('GRN created but stock update failed');
+      }
+      return confirm;
+    },
+    onSuccess: (confirm) => {
+      if (confirm) {
+        toast.success('GRN confirmed! Stock updated.');
       } else {
         toast.success('GRN saved as draft');
       }
-
+      queryClient.invalidateQueries(['goods-receipts']);
       onBack();
-    } catch { toast.error('Failed to save GRN'); }
-    finally { setSaving(false); }
+    },
+    onError: (err) => {
+      toast.error(err.message || 'Failed to save GRN');
+    }
+  });
+
+  const handleSave = (confirm = false) => {
+    if (!selectedSupplierId) { toast.error('Select a supplier'); return; }
+    if (items.some(it => !it.medicine && !it.medicineName)) { toast.error('Each item must have a medicine'); return; }
+
+    const payload = {
+      supplier: { id: parseInt(selectedSupplierId) },
+      purchaseOrder: po ? { id: po.id } : null,
+      supplierInvoiceNumber: invoiceNumber,
+      invoiceDate: invoiceDate || null,
+      deliveryChallanNumber: challanNumber,
+      vehicleNumber,
+      status: 'DRAFT',
+      items: items.map(it => ({
+        medicine: it.medicine ? { id: it.medicine.id } : null,
+        poItemId: it.poItemId || null,
+        orderedQuantity: parseInt(it.orderedQuantity) || 0,
+        receivedQuantity: parseInt(it.receivedQuantity) || 0,
+        rejectedQuantity: parseInt(it.rejectedQuantity) || 0,
+        rejectionReason: it.rejectionReason || null,
+        batchNumber: it.batchNumber || null,
+        manufacturingDate: it.manufacturingDate || null,
+        expiryDate: it.expiryDate || null,
+        mrp: parseFloat(it.mrp) || null,
+        purchaseRate: parseFloat(it.purchaseRate) || null,
+      }))
+    };
+
+    saveMutation.mutate({ payload, confirm });
   };
 
   const inputCls = "w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 bg-white";
@@ -136,9 +149,9 @@ export default function GRNEntry({ onBack }) {
           <input value={poSearch} onChange={e => setPoSearch(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && loadPo()}
             placeholder="Enter PO number (e.g. PO-20240622-1234)" className={`flex-1 ${inputCls}`} />
-          <button onClick={loadPo} disabled={loading}
+          <button onClick={loadPo} disabled={poMutation.isPending}
             className="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-1.5">
-            <Search className="w-3.5 h-3.5" /> {loading ? 'Loading…' : 'Load PO'}
+            <Search className="w-3.5 h-3.5" /> {poMutation.isPending ? 'Loading…' : 'Load PO'}
           </button>
         </div>
         {po && (
@@ -156,29 +169,40 @@ export default function GRNEntry({ onBack }) {
       <div className="bg-white rounded-xl border border-slate-100 p-5">
         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">GRN Header Details</div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Supplier *</label>
-            <select className={inputCls} value={selectedSupplierId} onChange={e => setSelectedSupplierId(e.target.value)}>
-              <option value="">Select supplier</option>
-              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Supplier Invoice No.</label>
-            <input className={inputCls} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="INV-2024-001" />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Invoice Date</label>
-            <input className={inputCls} type="date" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Delivery Challan No.</label>
-            <input className={inputCls} value={challanNumber} onChange={e => setChallanNumber(e.target.value)} placeholder="DC-2024-001" />
-          </div>
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Vehicle Number</label>
-            <input className={inputCls} value={vehicleNumber} onChange={e => setVehicleNumber(e.target.value)} placeholder="TN 01 AB 1234" />
-          </div>
+          <FormInput
+            type="select"
+            label="Supplier *"
+            value={selectedSupplierId}
+            onChange={e => setSelectedSupplierId(e.target.value)}
+            options={[
+              { value: '', label: 'Select supplier' },
+              ...suppliers.map(s => ({ value: s.id, label: s.name }))
+            ]}
+          />
+          <FormInput
+            label="Supplier Invoice No."
+            value={invoiceNumber}
+            onChange={e => setInvoiceNumber(e.target.value)}
+            placeholder="INV-2024-001"
+          />
+          <FormInput
+            type="date"
+            label="Invoice Date"
+            value={invoiceDate}
+            onChange={e => setInvoiceDate(e.target.value)}
+          />
+          <FormInput
+            label="Delivery Challan No."
+            value={challanNumber}
+            onChange={e => setChallanNumber(e.target.value)}
+            placeholder="DC-2024-001"
+          />
+          <FormInput
+            label="Vehicle Number"
+            value={vehicleNumber}
+            onChange={e => setVehicleNumber(e.target.value)}
+            placeholder="TN 01 AB 1234"
+          />
         </div>
       </div>
 
@@ -263,11 +287,11 @@ export default function GRNEntry({ onBack }) {
         <button onClick={onBack} className="px-5 py-2.5 border border-slate-200 text-slate-600 text-sm font-bold rounded-xl hover:bg-slate-50 transition-all">
           Cancel
         </button>
-        <button onClick={() => handleSave(false)} disabled={saving}
+        <button onClick={() => handleSave(false)} disabled={saveMutation.isPending}
           className="px-5 py-2.5 border border-blue-200 text-blue-600 text-sm font-bold rounded-xl hover:bg-blue-50 transition-all flex items-center gap-2 disabled:opacity-50">
           <Save className="w-4 h-4" /> Save as Draft
         </button>
-        <button onClick={() => handleSave(true)} disabled={saving}
+        <button onClick={() => handleSave(true)} disabled={saveMutation.isPending}
           className="px-6 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 transition-all flex items-center gap-2 disabled:opacity-50 shadow-sm">
           <CheckCircle2 className="w-4 h-4" /> Confirm GRN & Update Stock
         </button>

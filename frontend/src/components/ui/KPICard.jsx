@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { cn } from '../../utils/cn';
 
 export default function KPICard({ title, value, subtext, icon: Icon, trend, className }) {
@@ -24,3 +25,12 @@ export default function KPICard({ title, value, subtext, icon: Icon, trend, clas
     </div>
   );
 }
+
+KPICard.propTypes = {
+  title: PropTypes.string.isRequired,
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired,
+  subtext: PropTypes.string,
+  icon: PropTypes.elementType.isRequired,
+  trend: PropTypes.oneOf(['up', 'down', 'neutral']),
+  className: PropTypes.string
+};

@@ -2,16 +2,34 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Camera, ScanBarcode, Send, RefreshCw, AlertCircle, Play, Square } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function BarcodeScanner() {
   const [barcodeValue, setBarcodeValue] = useState('');
   const [scanModule, setScanModule] = useState('SALES');
   const [scans, setScans] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const queryClient = useQueryClient();
+
+  const scanMutation = useMutation({
+    mutationFn: (term) => pharmacyService.scanBarcode(term, scanModule, 1),
+    onSuccess: (res, term) => {
+      if (res.success || res.id) {
+        toast.success(`Barcode detected: "${term}" (${res.data?.medicineName || 'Scanned Logged'})`);
+        setScans(prev => [res.data || res, ...prev]);
+        setBarcodeValue('');
+        queryClient.invalidateQueries(['stocks']);
+      } else {
+        toast.error('Barcode lookup failed');
+      }
+    },
+    onError: () => {
+      toast.error('Error logging scanned barcode');
+    }
+  });
 
   // USB listener
   useEffect(() => {
@@ -30,24 +48,10 @@ export default function BarcodeScanner() {
     return () => window.removeEventListener('keypress', handleKeyPress);
   }, [scanModule]);
 
-  const handleScanSubmit = async (val = barcodeValue) => {
+  const handleScanSubmit = (val = barcodeValue) => {
     const term = val?.trim();
     if (!term) return;
-    setLoading(true);
-    try {
-      const res = await pharmacyService.scanBarcode(term, scanModule, 1); // Mock userId 1
-      if (res.success || res.id) {
-        toast.success(`Barcode detected: "${term}" (${res.data?.medicineName || 'Scanned Logged'})`);
-        setScans(prev => [res.data || res, ...prev]);
-        setBarcodeValue('');
-      } else {
-        toast.error('Barcode lookup failed');
-      }
-    } catch (err) {
-      toast.error('Error logging scanned barcode');
-    } finally {
-      setLoading(false);
-    }
+    scanMutation.mutate(term);
   };
 
   const startCamera = async () => {
@@ -126,7 +130,7 @@ export default function BarcodeScanner() {
                 />
                 <button
                   onClick={() => handleScanSubmit()}
-                  disabled={loading || !barcodeValue}
+                  disabled={scanMutation.isPending || !barcodeValue}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1 disabled:opacity-50"
                 >
                   <Send className="w-3.5 h-3.5" /> Submit

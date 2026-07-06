@@ -20,11 +20,14 @@ public class InsuranceClaimService {
 
     private final InsuranceClaimRepository claimRepository;
     private final InsuranceProviderRepository providerRepository;
+    private final com.pharmadesk.backend.repository.UserRepository userRepository;
 
     public InsuranceClaimService(InsuranceClaimRepository claimRepository,
-                                 InsuranceProviderRepository providerRepository) {
+                                 InsuranceProviderRepository providerRepository,
+                                 com.pharmadesk.backend.repository.UserRepository userRepository) {
         this.claimRepository = claimRepository;
         this.providerRepository = providerRepository;
+        this.userRepository = userRepository;
     }
 
     public PageResponse<InsuranceClaim> getAllClaims(Pageable pageable) {
@@ -43,6 +46,14 @@ public class InsuranceClaimService {
         claim.setClaimNumber("CLM-" + (System.currentTimeMillis() % 100000));
         claim.setClaimDate(LocalDate.now());
         claim.setClaimStatus("draft");
+        claim.setCreatedBy(getCurrentUserId());
+
+        if (claim.getCoveredAmount() == null) {
+            java.math.BigDecimal total = claim.getTotalBillAmount() != null ? claim.getTotalBillAmount() : java.math.BigDecimal.ZERO;
+            java.math.BigDecimal nonCovered = claim.getNonCoveredAmount() != null ? claim.getNonCoveredAmount() : java.math.BigDecimal.ZERO;
+            claim.setCoveredAmount(total.subtract(nonCovered));
+        }
+
         if (claim.getLineItems() != null) {
             claim.getLineItems().forEach(item -> {
                 item.setClaimLineId(UUID.randomUUID().toString());
@@ -50,6 +61,19 @@ public class InsuranceClaimService {
             });
         }
         return claimRepository.save(claim);
+    }
+
+    private Long getCurrentUserId() {
+        try {
+            var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated() && !(auth instanceof org.springframework.security.authentication.AnonymousAuthenticationToken)) {
+                String username = auth.getName();
+                return userRepository.findByUsername(username)
+                        .map(com.pharmadesk.backend.model.User::getId)
+                        .orElse(1L);
+            }
+        } catch (Exception e) {}
+        return 1L; // Fallback
     }
 
     @Transactional

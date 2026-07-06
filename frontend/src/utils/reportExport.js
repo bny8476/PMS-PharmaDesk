@@ -164,3 +164,53 @@ export async function exportToExcel(report, data, summaryData = {}) {
 
   XLSX.writeFile(wb, `${(report.id || 'report')}_${today}.xlsx`);
 }
+
+/**
+ * Export a report to a CSV file.
+ * @param {object} report
+ * @param {Array}  data
+ */
+export async function exportToCSV(report, data) {
+  const headers = report.headers || [];
+  const cols = report.columns || [];
+
+  const csvRows = [];
+  csvRows.push(headers.map(h => `"${h}"`).join(','));
+
+  (data || []).forEach(row => {
+    const values = cols.map(col => {
+      let val = row[col];
+      if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(val)) val = fmtDate(val);
+      val = val ?? '';
+      return `"${String(val).replace(/"/g, '""')}"`;
+    });
+    csvRows.push(values.join(','));
+  });
+
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${report.id || 'report'}_${today}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/**
+ * Export a DOM element (like a chart or table container) to a JPG image.
+ * @param {HTMLElement} element 
+ * @param {string} fileName 
+ */
+export async function exportToImage(element, fileName = 'report_image') {
+  if (!element) return;
+  const html2canvas = (await import('html2canvas')).default;
+  const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
+  const dataURL = canvas.toDataURL('image/jpeg', 0.9);
+  
+  const link = document.createElement('a');
+  link.href = dataURL;
+  link.download = `${fileName}_${today}.jpg`;
+  link.click();
+}

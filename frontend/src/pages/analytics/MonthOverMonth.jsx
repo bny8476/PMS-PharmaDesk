@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import api from '../../utils/api';
 import { ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react';
+import { exportToCSV } from '../../utils/reportExport';
 
 export default function MonthOverMonth() {
   const { dateRange } = useOutletContext();
@@ -78,11 +79,21 @@ export default function MonthOverMonth() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
             <h3 className="text-base font-bold text-gray-800">{monthA.monthName} Top 10</h3>
+            <button 
+              onClick={() => exportToCSV({
+                id: `top_10_${monthA.monthName}`,
+                headers: ['Medicine', 'Sales Value'],
+                columns: ['medicineName', 'totalSalesValue']
+              }, monthA.top10Medicines)}
+              className="text-xs text-blue-600 font-medium hover:text-blue-700"
+            >
+              Export
+            </button>
           </div>
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-gray-100 flex-1">
             {monthA.top10Medicines?.map((med, idx) => (
               <li key={idx} className="px-5 py-3 flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-700">{med.medicineName}</span>
@@ -92,11 +103,21 @@ export default function MonthOverMonth() {
           </ul>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden flex flex-col">
+          <div className="px-5 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
             <h3 className="text-base font-bold text-gray-800">{monthB.monthName} Top 10</h3>
+            <button 
+              onClick={() => exportToCSV({
+                id: `top_10_${monthB.monthName}`,
+                headers: ['Medicine', 'Sales Value'],
+                columns: ['medicineName', 'totalSalesValue']
+              }, monthB.top10Medicines)}
+              className="text-xs text-blue-600 font-medium hover:text-blue-700"
+            >
+              Export
+            </button>
           </div>
-          <ul className="divide-y divide-gray-100">
+          <ul className="divide-y divide-gray-100 flex-1">
             {monthB.top10Medicines?.map((med, idx) => (
               <li key={idx} className="px-5 py-3 flex justify-between items-center">
                 <span className="text-sm font-medium text-gray-700">{med.medicineName}</span>

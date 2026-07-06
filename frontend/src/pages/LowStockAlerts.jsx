@@ -65,9 +65,12 @@ export default function LowStockAlerts() {
     { 
       header: 'Current Stock', 
       render: (row) => (
-        <span className="font-bold">
-          {row.currentStock}
-        </span>
+        <div className="flex flex-col">
+          <span className="font-bold">{row.currentStock}</span>
+          {row.unitsPerPack > 1 && (
+            <span className="text-[10px] text-slate-500 mt-0.5">= {row.currentStock * row.unitsPerPack} units</span>
+          )}
+        </div>
       )
     },
     { header: 'Reorder Level', accessor: 'reorderLevel' },

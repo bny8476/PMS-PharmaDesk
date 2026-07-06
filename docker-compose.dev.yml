@@ -31,6 +31,8 @@ services:
       - .env
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/pms_dev
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=rootpassword
       - SPRING_REDIS_HOST=redis
     ports:
       - "8080:8080"

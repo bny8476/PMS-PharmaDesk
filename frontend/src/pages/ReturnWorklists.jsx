@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Eye, CheckCircle, XCircle } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -18,7 +19,11 @@ export default function ReturnWorklists() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [actionType, setActionType] = useState(''); // 'Approve' or 'Reject'
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     fetchPendingReturns();
@@ -54,8 +59,8 @@ export default function ReturnWorklists() {
   };
 
   const filteredRequests = returnRequests.filter(row => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
+    const searchLower = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
       row.id?.toString().includes(searchLower) ||
       row.originalBill?.billNumber?.toLowerCase().includes(searchLower) ||
       row.originalBill?.patientName?.toLowerCase().includes(searchLower);
@@ -120,7 +125,7 @@ export default function ReturnWorklists() {
         <p className="text-sm text-gray-500 font-medium">Review and process return requests from various departments</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -128,8 +133,8 @@ export default function ReturnWorklists() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredRequests} hover striped />
-        <Pagination totalRecords={filteredRequests.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        <DataTable columns={columns} data={pageSize === 'All' ? filteredRequests : filteredRequests.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+        <Pagination totalRecords={filteredRequests.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
 
       <AppModal 

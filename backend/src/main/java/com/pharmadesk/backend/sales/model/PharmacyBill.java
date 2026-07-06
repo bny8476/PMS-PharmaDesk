@@ -39,6 +39,13 @@ public class PharmacyBill extends BaseEntity {
     private String patientName;
     private String doctorName;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "doctor_id")
+    private Doctor doctor;
+
+    public Doctor getDoctor() { return doctor; }
+    public void setDoctor(Doctor doctor) { this.doctor = doctor; }
+
     @Column(name = "bill_date", nullable = false)
     private LocalDateTime billingDate;
 

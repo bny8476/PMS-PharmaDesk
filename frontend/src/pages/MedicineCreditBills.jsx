@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import { useLocation } from 'react-router-dom';
 import { Search, CreditCard, Eye, Printer, CheckCircle } from 'lucide-react';
@@ -9,44 +10,49 @@ import AppModal from '../components/ui/AppModal';
 import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
-import { useBillingStore } from '../store/useBillingStore';
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function MedicineCreditBills() {
   const location = useLocation();
-  const {
-    creditBillsList,
-    creditBillsLoading: loading,
-    fetchCreditBills
-  } = useBillingStore(useShallow(state => ({
-    creditBillsList: state.creditBillsList,
-    creditBillsLoading: state.creditBillsLoading,
-    fetchCreditBills: state.fetchCreditBills
-  })));
+  const queryClient = useQueryClient();
+
+  const { items: creditBillsList = [], isLoading: loading } = usePageData(
+    'credit-bills',
+    '/pharmacy/credit-bills'
+  );
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedBill, setSelectedBill] = useState(null);
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('CASH');
   const [reference, setReference] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
+  const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  useEffect(() => {
-    fetchCreditBills();
-  }, [location.key, fetchCreditBills]);
+  const paymentMutation = useMutation({
+    mutationFn: () => pharmacyService.addCreditPayment(selectedBill.id, paymentAmount, paymentMode, reference),
+    onSuccess: () => {
+      toast.success('Payment recorded successfully!');
+      setIsModalOpen(false);
+      queryClient.invalidateQueries(['credit-bills']);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to record payment');
+    }
+  });
 
-  const handleRecordPayment = async () => {
+  const handleRecordPayment = () => {
     if (!paymentAmount) {
       toast.error('Please enter amount');
       return;
     }
-    try {
-      const response = await pharmacyService.addCreditPayment(selectedBill.id, paymentAmount, paymentMode, reference);
-      if (response.success) {
-        toast.success('Payment recorded successfully!');
-        setIsModalOpen(false);
-        fetchCreditBills();
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to record payment');
-    }
+    paymentMutation.mutate();
   };
 
   const columns = [
@@ -87,15 +93,53 @@ export default function MedicineCreditBills() {
         <p className="text-sm text-gray-500 font-medium">Track outstanding balances and manage credit settlements</p>
       </div>
 
-      <ModuleFilterBar 
-        onSearch={() => {}}
-        onDateChange={() => {}}
+      <ModuleFilterBar searchPlaceholder="Search..." 
+        onSearch={setSearchTerm}
+        searchValue={searchTerm}
+        dateRange={dateRange}
+        onDateChange={(type, val) => setDateRange(prev => ({ ...prev, [type]: val }))}
         actions={[]}
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={creditBillsList} hover striped />
-        <Pagination totalRecords={creditBillsList.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={8} />
+        ) : (
+          <>
+            <DataTable 
+              columns={columns} 
+              data={(() => {
+                const filtered = creditBillsList.filter(row => {
+                  const searchLower = debouncedSearch.toLowerCase();
+                  const matchesSearch = !debouncedSearch || 
+                    row.bill?.billNumber?.toLowerCase().includes(searchLower) ||
+                    row.bill?.patientName?.toLowerCase().includes(searchLower);
+                  
+                  const billDate = new Date(row.bill?.billingDate || new Date());
+                  const matchesFrom = !dateRange.from || billDate >= dateRange.from;
+                  const matchesTo = !dateRange.to || billDate <= dateRange.to;
+                  
+                  return matchesSearch && matchesFrom && matchesTo;
+                });
+                return pageSize === 'All' ? filtered : filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+              })()} 
+              hover 
+              striped 
+            />
+            <Pagination totalRecords={creditBillsList.filter(row => {
+                  const searchLower = debouncedSearch.toLowerCase();
+                  const matchesSearch = !debouncedSearch || 
+                    row.bill?.billNumber?.toLowerCase().includes(searchLower) ||
+                    row.bill?.patientName?.toLowerCase().includes(searchLower);
+                  
+                  const billDate = new Date(row.bill?.billingDate || new Date());
+                  const matchesFrom = !dateRange.from || billDate >= dateRange.from;
+                  const matchesTo = !dateRange.to || billDate <= dateRange.to;
+                  
+                  return matchesSearch && matchesFrom && matchesTo;
+                }).length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       <AppModal 
@@ -106,7 +150,9 @@ export default function MedicineCreditBills() {
         footer={
           <div className="flex w-full gap-3">
              <button onClick={() => setIsModalOpen(false)} className="flex-1 px-6 py-2.5 border border-gray-200 rounded-xl text-sm font-bold text-gray-600 hover:bg-gray-50 transition-all">Cancel</button>
-             <button onClick={handleRecordPayment} className="flex-1 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all">Record Payment</button>
+             <button onClick={handleRecordPayment} disabled={paymentMutation.isPending} className="flex-1 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all disabled:opacity-50">
+               {paymentMutation.isPending ? 'Recording...' : 'Record Payment'}
+             </button>
           </div>
         }
       >

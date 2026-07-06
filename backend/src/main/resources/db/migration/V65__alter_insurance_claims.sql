@@ -1,0 +1,4 @@
+SET FOREIGN_KEY_CHECKS = 0;
+ALTER TABLE insurance_claims MODIFY bill_id BIGINT NULL;
+ALTER TABLE insurance_claims MODIFY patient_id BIGINT NULL;
+SET FOREIGN_KEY_CHECKS = 1;

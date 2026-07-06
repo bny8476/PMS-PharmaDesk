@@ -83,6 +83,20 @@ public class AnalyticsService {
             BigDecimal prevNet = prevRev.subtract(prevRet);
             dashboard.setNetRevenue(calculateKPI(currentNet, prevNet));
 
+            // 7. Total Purchases
+            BigDecimal currentPurchases = getPurchases(startDate, endDate);
+            BigDecimal prevPurchases = getPurchases(prevStartDate, prevEndDate);
+            dashboard.setTotalPurchases(calculateKPI(currentPurchases, prevPurchases));
+
+            // 8. Estimated Profit Margin
+            BigDecimal currentCogs = getCogs(startDate, endDate);
+            BigDecimal prevCogs = getCogs(prevStartDate, prevEndDate);
+            BigDecimal currentMargin = currentNet.compareTo(BigDecimal.ZERO) > 0 ? 
+                    currentNet.subtract(currentCogs).divide(currentNet, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100")) : BigDecimal.ZERO;
+            BigDecimal prevMargin = prevNet.compareTo(BigDecimal.ZERO) > 0 ? 
+                    prevNet.subtract(prevCogs).divide(prevNet, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100")) : BigDecimal.ZERO;
+            dashboard.setEstimatedProfitMargin(calculateKPI(currentMargin, prevMargin));
+
             // Fast & Slow Moving
             dashboard.setFastMovingMedicines(getFastMovingMedicines(startDate, endDate, 5));
             dashboard.setSlowMovingMedicines(getSlowMovingMedicines(startDate, endDate, 5));
@@ -98,11 +112,31 @@ public class AnalyticsService {
             dashboard.setAverageTransactionValue(zero);
             dashboard.setTotalReturnsValue(zero);
             dashboard.setNetRevenue(zero);
+            dashboard.setTotalPurchases(zero);
+            dashboard.setEstimatedProfitMargin(zero);
             dashboard.setFastMovingMedicines(new ArrayList<>());
             dashboard.setSlowMovingMedicines(new ArrayList<>());
             dashboard.setRevenueTrend(new ArrayList<>());
         }
         return dashboard;
+    }
+
+    private BigDecimal getPurchases(LocalDateTime start, LocalDateTime end) {
+        String sql = "SELECT SUM(i.received_quantity * i.purchase_rate) FROM goods_receipt_note_items i JOIN goods_receipt_notes g ON i.grn_id = g.id WHERE g.status = 'CONFIRMED' AND g.received_date BETWEEN :start AND :end AND g.is_deleted = false";
+        Query query = entityManager.createNativeQuery(sql);
+        query.setParameter("start", start);
+        query.setParameter("end", end);
+        Object result = query.getSingleResult();
+        return result != null ? new BigDecimal(result.toString()) : BigDecimal.ZERO;
+    }
+
+    private BigDecimal getCogs(LocalDateTime start, LocalDateTime end) {
+        String sql = "SELECT SUM(i.quantity * s.purchase_rate) FROM sales_line_items i JOIN sales_bills b ON i.bill_id = b.id JOIN medicine_stocks s ON i.stock_id = s.id WHERE b.bill_date BETWEEN :start AND :end AND b.is_deleted = false";
+        Query query = entityManager.createNativeQuery(sql);
+        query.setParameter("start", start);
+        query.setParameter("end", end);
+        Object result = query.getSingleResult();
+        return result != null ? new BigDecimal(result.toString()) : BigDecimal.ZERO;
     }
 
     private BigDecimal getRevenue(LocalDateTime start, LocalDateTime end) {
@@ -145,13 +179,13 @@ public class AnalyticsService {
 
     public List<MedicineStatsDTO> getFastMovingMedicines(LocalDateTime start, LocalDateTime end, int limit) {
         String sql = """
-            SELECT m.id, m.name, m.drug_class, SUM(i.quantity) as totalUnits, SUM(i.net_amount) as totalSales, COUNT(DISTINCT b.id) as txns 
+            SELECT m.id, m.name, m.drug_class, SUM(i.quantity) as totalUnits, SUM(i.net_amount) as totalSales, COUNT(DISTINCT b.id) as txns, m.purchase_price 
             FROM sales_line_items i 
             JOIN sales_bills b ON i.bill_id = b.id 
             JOIN medicine_stocks s ON i.stock_id = s.id
             JOIN medicines m ON s.medicine_id = m.id
             WHERE b.bill_date BETWEEN :start AND :end AND b.is_deleted = false 
-            GROUP BY m.id, m.name, m.drug_class 
+            GROUP BY m.id, m.name, m.drug_class, m.purchase_price 
             ORDER BY totalUnits DESC 
             LIMIT :limit
         """;
@@ -170,11 +204,21 @@ public class AnalyticsService {
             dto.setTotalSalesValue(row[4] != null ? new BigDecimal(row[4].toString()) : BigDecimal.ZERO);
             dto.setNumberOfTransactions(((Number) row[5]).intValue());
             
+            // Temporary storage for purchase price (could add to DTO, but calculating locked value later)
+            BigDecimal purchasePrice = row[6] != null ? new BigDecimal(row[6].toString()) : BigDecimal.ZERO;
+            
             if (dto.getNumberOfTransactions() > 0) {
                 dto.setAverageUnitsPerTransaction((double) dto.getTotalUnitsDispensed() / dto.getNumberOfTransactions());
             } else {
                 dto.setAverageUnitsPerTransaction(0.0);
             }
+            
+            // We will set stockValueLocked in the next loop once we have the current stock level
+            // but we need to pass the purchasePrice to it. 
+            // A hacky way is to use getStockValueLocked temporarily or a local map.
+            // Let's store purchase price in stockValueLocked temporarily.
+            dto.setStockValueLocked(purchasePrice);
+            
             return dto;
         }).collect(Collectors.toList());
 
@@ -190,6 +234,11 @@ public class AnalyticsService {
             for (MedicineStatsDTO dto : dtos) {
                 int stock = stockMap.getOrDefault(dto.getMedicineId(), 0);
                 dto.setCurrentStockLevel(stock);
+
+                // stockValueLocked was temporarily holding purchasePrice
+                BigDecimal purchasePrice = dto.getStockValueLocked();
+                if (purchasePrice == null) purchasePrice = BigDecimal.ZERO;
+                dto.setStockValueLocked(purchasePrice.multiply(new BigDecimal(stock)));
 
                 double dailyAvg = (double) dto.getTotalUnitsDispensed() / days;
                 if (dailyAvg > 0) {
@@ -209,13 +258,13 @@ public class AnalyticsService {
         String sql = """
             SELECT m.id, m.name, m.drug_class, 
                    COALESCE(SUM(i.quantity), 0) as totalUnits, 
-                   MAX(b.bill_date) as lastDispensed 
+                   MAX(b.bill_date) as lastDispensed, m.purchase_price 
             FROM medicines m 
             LEFT JOIN medicine_stocks s ON m.id = s.medicine_id
             LEFT JOIN sales_line_items i ON s.id = i.stock_id 
             LEFT JOIN sales_bills b ON i.bill_id = b.id AND b.bill_date BETWEEN :start AND :end AND b.is_deleted = false 
             WHERE m.is_deleted = false 
-            GROUP BY m.id, m.name, m.drug_class 
+            GROUP BY m.id, m.name, m.drug_class, m.purchase_price 
             ORDER BY totalUnits ASC 
             LIMIT :limit
         """;
@@ -242,6 +291,8 @@ public class AnalyticsService {
                     dto.setLastDispensedDate(((java.time.LocalDate) row[4]).atStartOfDay());
                 }
             }
+            BigDecimal purchasePrice = row[5] != null ? new BigDecimal(row[5].toString()) : BigDecimal.ZERO;
+            dto.setStockValueLocked(purchasePrice);
             return dto;
         }).collect(Collectors.toList());
 
@@ -256,7 +307,9 @@ public class AnalyticsService {
             for (MedicineStatsDTO dto : dtos) {
                 int stock = stockMap.getOrDefault(dto.getMedicineId(), 0);
                 dto.setCurrentStockLevel(stock);
-                dto.setStockValueLocked(BigDecimal.ZERO);
+                BigDecimal purchasePrice = dto.getStockValueLocked();
+                if (purchasePrice == null) purchasePrice = BigDecimal.ZERO;
+                dto.setStockValueLocked(purchasePrice.multiply(new BigDecimal(stock)));
             }
         }
         return dtos;

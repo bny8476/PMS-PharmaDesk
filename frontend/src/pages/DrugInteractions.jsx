@@ -1,38 +1,39 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { ShieldAlert, Search, RefreshCw, AlertTriangle, ShieldCheck, ListPlus, Trash2 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
 
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
 export default function DrugInteractions() {
-  const [medicines, setMedicines] = useState([]);
+  const queryClient = useQueryClient();
   const [selectedMedicines, setSelectedMedicines] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
   const [interactions, setInteractions] = useState([]);
-  const [incidentLogs, setIncidentLogs] = useState([]);
-  const [checking, setChecking] = useState(false);
-  const [loadingLogs, setLoadingLogs] = useState(false);
 
-  useEffect(() => {
-    pharmacyService.getMedicines().then(res => {
-      if (res.success || Array.isArray(res)) {
-        setMedicines(res.data || res || []);
-      }
-    }).catch(() => toast.error('Failed to load medicines list'));
-
-    loadIncidentLogs();
-  }, []);
-
-  const loadIncidentLogs = async () => {
-    setLoadingLogs(true);
-    try {
-      const res = await pharmacyService.getDrugInteractionIncidentReport();
-      setIncidentLogs(res.data || res || []);
-    } catch {
-      toast.error('Failed to load check incidents log');
-    } finally {
-      setLoadingLogs(false);
+  // Fetch medicines
+  const { data: rawMedicines = [] } = useQuery({
+    queryKey: ['medicines-list'],
+    queryFn: async () => {
+      const res = await pharmacyService.getMedicines();
+      const data = res.data || res;
+      return Array.isArray(data) ? data : [];
     }
-  };
+  });
+  const medicines = rawMedicines;
+
+  // Fetch incident logs
+  const { data: rawIncidentLogs = [], isLoading: loadingLogs } = useQuery({
+    queryKey: ['interaction-logs'],
+    queryFn: async () => {
+      const res = await pharmacyService.getDrugInteractionIncidentReport();
+      const data = res.data || res;
+      return Array.isArray(data) ? data : [];
+    }
+  });
+  const incidentLogs = rawIncidentLogs;
 
   const handleAddMedicine = (med) => {
     if (selectedMedicines.some(m => m.id === med.id)) {
@@ -47,35 +48,37 @@ export default function DrugInteractions() {
     setSelectedMedicines(selectedMedicines.filter(m => m.id !== id));
   };
 
-  const handleCheck = async () => {
-    if (selectedMedicines.length < 2) {
-      toast.error('Select at least two medicines to perform check');
-      return;
-    }
-    setChecking(true);
-    setInteractions([]);
-    try {
-      const ids = selectedMedicines.map(m => m.id);
-      const res = await pharmacyService.checkDrugInteractions(ids);
-      
-      const results = res.data || res || [];
+  const checkMutation = useMutation({
+    mutationFn: (ids) => pharmacyService.checkDrugInteractions(ids),
+    onSuccess: (res) => {
+      const data = res.data || res;
+      const results = Array.isArray(data) ? data : [];
       setInteractions(results);
       if (results.length > 0) {
         toast.error(`Detected ${results.length} drug-drug interaction(s)!`);
       } else {
         toast.success('No drug interactions detected for this combination.');
       }
-      loadIncidentLogs();
-    } catch (err) {
+      queryClient.invalidateQueries(['interaction-logs']);
+    },
+    onError: () => {
       toast.error('Failed to perform drug interaction check');
-    } finally {
-      setChecking(false);
     }
+  });
+
+  const handleCheck = () => {
+    if (selectedMedicines.length < 2) {
+      toast.error('Select at least two medicines to perform check');
+      return;
+    }
+    setInteractions([]);
+    const ids = selectedMedicines.map(m => m.id);
+    checkMutation.mutate(ids);
   };
 
   const filteredMedicines = searchTerm.trim() === '' ? [] : medicines.filter(m => 
-    m.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    m.code?.toLowerCase().includes(searchTerm.toLowerCase())
+    m.name?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    m.code?.toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   const getSeverityColor = (sev) => {
@@ -151,10 +154,10 @@ export default function DrugInteractions() {
 
             <button
               onClick={handleCheck}
-              disabled={checking || selectedMedicines.length < 2}
+              disabled={checkMutation.isPending || selectedMedicines.length < 2}
               className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm"
             >
-              {checking ? 'Running Screen...' : 'Analyze Inter-Drug Action'}
+              {checkMutation.isPending ? 'Running Screen...' : 'Analyze Inter-Drug Action'}
             </button>
           </div>
 
@@ -195,7 +198,7 @@ export default function DrugInteractions() {
         <div className="bg-white rounded-xl border border-slate-100 overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
             <h3 className="text-sm font-bold text-slate-700">Interaction Log</h3>
-            <button onClick={loadIncidentLogs} disabled={loadingLogs} className="p-1 text-slate-400 hover:text-slate-600">
+            <button onClick={() => queryClient.invalidateQueries(['interaction-logs'])} disabled={loadingLogs} className="p-1 text-slate-400 hover:text-slate-600">
               <RefreshCw className={`w-3.5 h-3.5 ${loadingLogs ? 'animate-spin' : ''}`} />
             </button>
           </div>

@@ -7,6 +7,7 @@ import pharmacyService from '../utils/pharmacyService';
 const nameChangeTimers = new Map();
 const abortControllers = new Map();
 let patientSearchTimer = null;
+let doctorSearchTimer = null;
 
 const createEmptyRow = () => ({
   id: Date.now() + Math.random(),
@@ -34,10 +35,13 @@ const getInitialState = () => ({
   visitSearch: '',
 
   // Patient Info State
+  patientMode: 'existing',
+  newPatientForm: { name: '', phone: '', address: '', homeDelivery: false, deliveryAddress: '' },
   patientName: 'Walk-in',
   ageSex: '',
   uhid: '',
   doctor: '',
+  doctorId: null,
   insurance: '',
   patientType: '',
   pharmacy: 'OP Pharmacy',
@@ -51,13 +55,17 @@ const getInitialState = () => ({
   patientSearchResults: [],
   isSearchingPatient: false,
 
+  // Doctor Autocomplete State
+  doctorSearchResults: [],
+  isSearchingDoctor: false,
+
   // Item rows State
   rows: [createEmptyRow()],
   isGenericSearch: false,
   barcodeSearch: '',
 
   // Payment State
-  paymentType: 'Cash',
+  paymentType: 'CASH',
   isMultiplePayment: false,
   discount: 0,
   receiptAmount: 0,
@@ -68,7 +76,7 @@ const getInitialState = () => ({
 export const usePOSStore = create(
   devtools(
     persist(
-      immer((set, get) => ({
+      immer((set) => ({
         ...getInitialState(),
 
         setField: (field, value) => set(state => { state[field] = value; }),
@@ -77,6 +85,7 @@ export const usePOSStore = create(
           nameChangeTimers.forEach(t => clearTimeout(t));
           nameChangeTimers.clear();
           if (patientSearchTimer) clearTimeout(patientSearchTimer);
+          if (doctorSearchTimer) clearTimeout(doctorSearchTimer);
           abortControllers.forEach(ctrl => ctrl.abort());
           abortControllers.clear();
           
@@ -90,7 +99,6 @@ export const usePOSStore = create(
         }),
 
         removeRow: (idx) => set(state => {
-          if (state.rows.length === 1) return;
           if (nameChangeTimers.has(idx)) {
             clearTimeout(nameChangeTimers.get(idx));
             nameChangeTimers.delete(idx);
@@ -98,6 +106,10 @@ export const usePOSStore = create(
           if (abortControllers.has(`row_${idx}`)) {
             abortControllers.get(`row_${idx}`).abort();
             abortControllers.delete(`row_${idx}`);
+          }
+          if (state.rows.length === 1) {
+            state.rows[0] = createEmptyRow();
+            return;
           }
           state.rows.splice(idx, 1);
         }),
@@ -148,15 +160,102 @@ export const usePOSStore = create(
           state.patientSearchResults = [];
         }),
 
-        handleNameChange: (idx, val) => {
+        searchDoctors: (query) => {
+          if (query.trim().length < 2) {
+            set(state => { state.doctorSearchResults = []; });
+            return;
+          }
+          
+          if (doctorSearchTimer) clearTimeout(doctorSearchTimer);
+          
+          doctorSearchTimer = setTimeout(async () => {
+            if (abortControllers.has('doctor')) {
+              abortControllers.get('doctor').abort();
+            }
+            const ctrl = new AbortController();
+            abortControllers.set('doctor', ctrl);
+            
+            set(state => { state.isSearchingDoctor = true; });
+            try {
+              const res = await pharmacyService.api.get('/doctors/search', { params: { name: query }, signal: ctrl.signal });
+              const data = res?.data || [];
+              set(state => {
+                state.doctorSearchResults = Array.isArray(data) ? data : [];
+                state.isSearchingDoctor = false;
+              });
+            } catch (err) {
+              if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+              console.error('Error searching doctors:', err);
+              set(state => {
+                state.doctorSearchResults = [];
+                state.isSearchingDoctor = false;
+              });
+            }
+          }, 300);
+        },
+
+        selectDoctor: (doc) => set(state => {
+          state.doctor = doc.name;
+          state.doctorId = doc.id;
+          state.doctorSearchResults = [];
+        }),
+
+        createAndSelectPatient: async () => {
+          const state = usePOSStore.getState();
+          const { newPatientForm } = state;
+          
+          if (!newPatientForm.name) {
+             toast.error('Patient name is required');
+             return false;
+          }
+          if (!newPatientForm.phone) {
+             toast.error('Phone number is required');
+             return false;
+          }
+          if (newPatientForm.phone && !/^\+?[\d\s-]{10,}$/.test(newPatientForm.phone)) {
+            toast.error('Invalid phone number format');
+            return false;
+          }
+
+          set(s => { s.saving = true; });
+          try {
+            const payload = {
+              name: newPatientForm.name,
+              phone: newPatientForm.phone,
+              address: newPatientForm.address,
+              preferredDelivery: newPatientForm.homeDelivery,
+              deliveryAddress: newPatientForm.homeDelivery ? newPatientForm.deliveryAddress : newPatientForm.address
+            };
+            const response = await pharmacyService.createPatient(payload);
+            const data = response?.data || response;
+            
+            set(s => {
+              s.patientName = data.name;
+              s.uhid = data.uhid;
+              s.uhidSearch = data.name;
+              s.patientMode = 'existing';
+              s.saving = false;
+            });
+            return true;
+          } catch (err) {
+            console.error('Failed to create patient:', err);
+            toast.error(err.response?.data?.message || 'Failed to create patient');
+            set(s => { s.saving = false; });
+            return false;
+          }
+        },
+
+        handleNameChange: (idx, val, force = false) => {
           set(state => {
             if (state.rows[idx]) {
               state.rows[idx].codeName = val;
-              state.rows[idx].searchResults = [];
+              if (!force && val.trim().length > 0 && val.trim().length < 2) {
+                state.rows[idx].searchResults = [];
+              }
             }
           });
 
-          if (val.trim().length < 2) return;
+          if (!force && val.trim().length > 0 && val.trim().length < 2) return;
 
           if (nameChangeTimers.has(idx)) {
             clearTimeout(nameChangeTimers.get(idx));
@@ -240,12 +339,25 @@ export const usePOSStore = create(
 
       })),
       {
-        name: 'pos-form',
+        name: 'pos-cart-storage',
         storage: createJSONStorage(() => sessionStorage),
-        partialize: (state) => {
-          const rowsNoSearch = state.rows.map(r => ({ ...r, searchResults: [] }));
-          return { ...state, rows: rowsNoSearch, patientSearchResults: [] };
-        }
+        partialize: (state) => ({
+          visitType: state.visitType,
+          patientMode: state.patientMode,
+          newPatientForm: state.newPatientForm,
+          patientName: state.patientName,
+          ageSex: state.ageSex,
+          uhid: state.uhid,
+          doctor: state.doctor,
+          doctorId: state.doctorId,
+          insurance: state.insurance,
+          patientType: state.patientType,
+          pharmacy: state.pharmacy,
+          discountType: state.discountType,
+          discountCategory: state.discountCategory,
+          location: state.location,
+          rows: state.rows.map(r => ({ ...r, searchResults: [] }))
+        })
       }
     )
   )

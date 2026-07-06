@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.ReturnToSupplier;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -37,7 +38,7 @@ public class ReturnToSupplierController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<ReturnToSupplier>> create(@RequestBody ReturnToSupplier returnToSupplier) {
+    public ResponseEntity<ApiResponse<ReturnToSupplier>> create(@Valid @RequestBody ReturnToSupplier returnToSupplier) {
         return ResponseEntity.ok(ApiResponse.success(returnService.createReturn(returnToSupplier), "Return initiated and stock deducted"));
     }
 

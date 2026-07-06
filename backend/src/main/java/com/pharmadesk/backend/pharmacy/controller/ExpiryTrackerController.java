@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.BatchReturnToSupplier;
 import com.pharmadesk.backend.model.StockBatch;
@@ -41,7 +42,7 @@ public class ExpiryTrackerController {
 
     @PostMapping("/return")
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_PHARMACY_STAFF','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<BatchReturnToSupplier>> initiateReturn(@RequestBody BatchReturnToSupplier returnRequest) {
+    public ResponseEntity<ApiResponse<BatchReturnToSupplier>> initiateReturn(@Valid @RequestBody BatchReturnToSupplier returnRequest) {
         return ResponseEntity.ok(ApiResponse.success(service.initiateBatchReturn(returnRequest), "Return initiated successfully"));
     }
 

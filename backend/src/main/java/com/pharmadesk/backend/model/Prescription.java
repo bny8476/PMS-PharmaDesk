@@ -24,6 +24,10 @@ public class Prescription extends BaseEntity {
     @Column(name = "doctor_name")
     private String doctorName;
 
+    @jakarta.persistence.ManyToOne(fetch = jakarta.persistence.FetchType.LAZY)
+    @jakarta.persistence.JoinColumn(name = "doctor_id")
+    private Doctor doctor;
+
     public String getDoctorName() { return doctorName; }
     public void setDoctorName(String doctorName) { this.doctorName = doctorName; }
 

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import { Plus, Search, Users, Trash2, Edit3, Save, XCircle, Phone, MapPin, CreditCard, User, Calendar, History } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -7,28 +8,23 @@ import Pagination from '../components/ui/Pagination';
 import AppModal from '../components/ui/AppModal';
 import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
-import { usePatientStore } from '../store/usePatientStore';
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import pharmacyService from '../utils/pharmacyService';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function Patients() {
-  const {
-    patients,
-    loading,
-    searchTerm,
-    setSearch,
-    fetchPatients,
-    createPatient,
-    updatePatient,
-    deletePatient
-  } = usePatientStore(useShallow(state => ({
-    patients: state.patients,
-    loading: state.loading,
-    searchTerm: state.searchTerm,
-    setSearch: state.setSearch,
-    fetchPatients: state.fetchPatients,
-    createPatient: state.createPatient,
-    updatePatient: state.updatePatient,
-    deletePatient: state.deletePatient
-  })));
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const { items: patients = [], isLoading: loading } = usePageData(
+    'patients',
+    '/pharmacy/patients'
+  );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -44,31 +40,54 @@ export default function Patients() {
     insuranceId: ''
   });
 
-  useEffect(() => {
-    fetchPatients();
-  }, []);
+  const createPatientMutation = useMutation({
+    mutationFn: (data) => pharmacyService.createPatient(data),
+    onSuccess: () => {
+      toast.success('Patient created successfully');
+      queryClient.invalidateQueries(['patients']);
+      closeModal();
+    },
+    onError: () => toast.error('Failed to create patient')
+  });
 
-  const handleCreate = async () => {
+  const updatePatientMutation = useMutation({
+    mutationFn: ({ id, data }) => pharmacyService.updatePatient(id, data),
+    onSuccess: () => {
+      toast.success('Patient updated successfully');
+      queryClient.invalidateQueries(['patients']);
+      closeModal();
+    },
+    onError: () => toast.error('Failed to update patient')
+  });
+
+  const deletePatientMutation = useMutation({
+    mutationFn: (id) => pharmacyService.deletePatient(id),
+    onSuccess: () => {
+      toast.success('Patient deleted successfully');
+      queryClient.invalidateQueries(['patients']);
+    },
+    onError: () => toast.error('Failed to delete patient')
+  });
+
+  const handleCreate = () => {
     if (!formData.name) {
       toast.error('Patient name is required');
       return;
     }
-    const ok = await createPatient(formData);
-    if (ok) closeModal();
+    createPatientMutation.mutate(formData);
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!formData.name) {
       toast.error('Patient name is required');
       return;
     }
-    const ok = await updatePatient(selectedPatient.id, formData);
-    if (ok) closeModal();
+    updatePatientMutation.mutate({ id: selectedPatient.id, data: formData });
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (!window.confirm('Are you sure you want to delete this patient record?')) return;
-    await deletePatient(id);
+    deletePatientMutation.mutate(id);
   };
 
   const openAddModal = () => {
@@ -106,15 +125,27 @@ export default function Patients() {
   };
 
   const displayedPatients = useMemo(() => {
-    if (!searchTerm) return patients;
-    const s = searchTerm.toLowerCase();
+    let filtered = patients;
+    if (searchTerm) {
+      const s = debouncedSearch.toLowerCase();
+      filtered = patients.filter(p => 
+        p.name?.toLowerCase().includes(s) || 
+        p.uhid?.toLowerCase().includes(s)
+      );
+    }
+    return pageSize === 'All' ? filtered : filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [patients, searchTerm, currentPage, pageSize]);
+
+  const totalPatients = useMemo(() => {
+    if (!debouncedSearch) return patients.length;
+    const s = debouncedSearch.toLowerCase();
     return patients.filter(p => 
       p.name?.toLowerCase().includes(s) || 
       p.uhid?.toLowerCase().includes(s)
-    );
+    ).length;
   }, [patients, searchTerm]);
 
-  const columns = [
+  const columns = React.useMemo(() => [
     { header: 'S.No', render: (_, i) => i + 1 },
     { 
       header: 'Patient Info', 
@@ -176,14 +207,7 @@ export default function Patients() {
         </button>
       </div>
     )}
-  ];
-
-  if (loading && patients.length === 0) return (
-    <div className="p-8 flex flex-col items-center justify-center space-y-4">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-      <p className="text-slate-500 font-bold italic text-lg">Loading Patients...</p>
-    </div>
-  );
+  ], []);
 
   return (
     <div className="space-y-6">
@@ -192,8 +216,8 @@ export default function Patients() {
         <p className="text-sm text-gray-500 font-medium">Manage patient registrations, UHID tracking, and medical history access</p>
       </div>
 
-      <ModuleFilterBar 
-        onSearch={setSearch}
+      <ModuleFilterBar searchPlaceholder="Search..." 
+        onSearch={setSearchTerm}
         searchValue={searchTerm}
         actions={[
           { label: 'Register New Patient', icon: Plus, variant: 'primary', onClick: openAddModal }
@@ -201,8 +225,14 @@ export default function Patients() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={displayedPatients} hover striped />
-        <Pagination totalRecords={displayedPatients.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={6} />
+        ) : (
+          <>
+            <DataTable columns={columns} data={displayedPatients} hover striped virtualized={true} />
+            <Pagination totalRecords={totalPatients} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       {/* Add/Edit Modal */}

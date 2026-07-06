@@ -29,9 +29,9 @@ describe('usePOSStore', () => {
     // Simulate updating the first row with mock stock
     const mockStock = {
       id: 10,
-      mrp: 100,
+      sellingRate: 100,
       batchNo: 'B1',
-      availableQty: 50,
+      quantityAvailable: 50,
       medicine: {
         code: 'PAR500',
         name: 'Paracetamol',

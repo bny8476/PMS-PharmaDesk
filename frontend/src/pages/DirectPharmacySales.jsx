@@ -9,29 +9,26 @@ import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
 import PharmacyInvoice from '../components/pharmacy/PharmacyInvoice';
-import { useDirectSalesStore } from '../store/useDirectSalesStore';
-import { useShallow } from 'zustand/react/shallow';
 import { usePOSStore } from '../store/usePOSStore';
-
+import { usePageData } from '../hooks/usePageData';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
+import TableSkeleton from '../components/ui/TableSkeleton';
+import useDebounce from '../hooks/useDebounce';
 export default function DirectPharmacySales() {
-  const {
-    directSalesList: salesList,
-    directSalesLoading: loading,
-    directSalesSearchTerm: searchTerm,
-    directSalesDateRange: dateRange,
-    setDirectSalesSearch: setSearchTerm,
-    setDirectSalesDateRange: setDateRange,
-    fetchDirectSales: fetchSales
-  } = useDirectSalesStore(useShallow(state => ({
-    directSalesList: state.directSalesList,
-    directSalesLoading: state.directSalesLoading,
-    directSalesSearchTerm: state.directSalesSearchTerm,
-    directSalesDateRange: state.directSalesDateRange,
-    setDirectSalesSearch: state.setDirectSalesSearch,
-    setDirectSalesDateRange: state.setDirectSalesDateRange,
-    fetchDirectSales: state.fetchDirectSales
-  })));
-
+  const queryClient = useQueryClient();
+  const { items: salesList = [], isLoading: loading } = usePageData('sales', '/pharmacy/sales');
+  
+  // Local state for filters
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+  
+  const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const posStore = usePOSStore(useShallow(state => ({
     patientName: state.patientName,
     doctor: state.doctor,
@@ -55,15 +52,31 @@ export default function DirectPharmacySales() {
   const [billToDelete, setBillToDelete] = useState(null);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
 
-  useEffect(() => {
-    fetchSales();
-  }, [location.key]);
+
 
   const calculateSubtotal = () => posStore.rows.reduce((acc, row) => acc + ((Number(row.rate) || 0) * (Number(row.qty) || 0)), 0);
   const calculateGST = () => posStore.rows.reduce((acc, row) => acc + (((Number(row.rate) || 0) * (Number(row.qty) || 0) * (Number(row.gst) || 0)) / 100), 0);
   const calculateNet = () => posStore.rows.reduce((acc, row) => acc + (row.amount || 0), 0);
 
-  const saveBill = async (options = { shouldPrint: false }) => {
+  const saveBillMutation = useMutation({
+    mutationFn: (payload) => pharmacyService.createSale(payload),
+    onSuccess: (response, variables, context) => {
+      const billData = response.data || response;
+      if (response.success || billData?.id) {
+        toast.success('OTC Sale completed!');
+        setIsModalOpen(false);
+        posStore.resetForm();
+        queryClient.invalidateQueries(['sales']);
+        
+        // Pass print flag through a local variable if needed or handle directly where called.
+      }
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to save OTC sale');
+    }
+  });
+
+  const saveBill = (options = { shouldPrint: false }) => {
     const validItems = posStore.rows.filter(i => i.stockId && (Number(i.qty) > 0));
     if (validItems.length === 0) { toast.error('Add at least one medicine'); return; }
 
@@ -80,38 +93,35 @@ export default function DirectPharmacySales() {
       }))
     };
 
-    try {
-      const response = await pharmacyService.createSale(payload);
-      const billData = response.data || response;
-      if (response.success || billData?.id) {
-        toast.success('OTC Sale completed!');
-        setIsModalOpen(false);
-        posStore.resetForm();
-        fetchSales();
-        
-        if (options.shouldPrint) {
+    saveBillMutation.mutate(payload, {
+      onSuccess: (response) => {
+        const billData = response.data || response;
+        if ((response.success || billData?.id) && options.shouldPrint) {
            setSelectedInvoice(billData);
            setIsInvoiceModalOpen(true);
         }
       }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to save OTC sale');
-    }
+    });
   };
 
-  const cancelBill = async () => {
-    if (!billToDelete) return;
-    try {
-      const response = await pharmacyService.deleteSale(billToDelete);
+  const cancelBillMutation = useMutation({
+    mutationFn: () => pharmacyService.deleteSale(billToDelete),
+    onSuccess: (response) => {
       if (response.success) {
         toast.success('Sale cancelled and stock reverted');
         setIsDeleteModalOpen(false);
         setBillToDelete(null);
-        fetchSales();
+        queryClient.invalidateQueries(['sales']);
       }
-    } catch (error) {
+    },
+    onError: () => {
       toast.error('Failed to cancel sale');
     }
+  });
+
+  const cancelBill = () => {
+    if (!billToDelete) return;
+    cancelBillMutation.mutate();
   };
 
   const columns = [
@@ -159,6 +169,7 @@ export default function DirectPharmacySales() {
       <ModuleFilterBar 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
+        searchPlaceholder="Search by Receipt No, Customer Name..."
         dateRange={dateRange}
         onDateChange={(type, val) => setDateRange(prev => ({ ...prev, [type]: val }))}
         actions={[
@@ -167,13 +178,32 @@ export default function DirectPharmacySales() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable 
-          columns={columns} 
-          data={salesList} 
-          hover 
-          striped 
-        />
-        <Pagination totalRecords={salesList.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={8} />
+        ) : (
+          <>
+            <DataTable 
+              columns={columns} 
+              data={(() => {
+                const filtered = salesList.filter(row => {
+                  const s = debouncedSearch.toLowerCase();
+                  return !debouncedSearch || 
+                    row.billNumber?.toLowerCase().includes(s) || 
+                    row.patientName?.toLowerCase().includes(s);
+                });
+                return pageSize === 'All' ? filtered : filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+              })()} 
+              hover 
+              striped 
+            />
+            <Pagination totalRecords={salesList.filter(row => {
+                  const s = debouncedSearch.toLowerCase();
+                  return !debouncedSearch || 
+                    row.billNumber?.toLowerCase().includes(s) || 
+                    row.patientName?.toLowerCase().includes(s);
+                }).length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       {/* Entry Modal */}
@@ -234,23 +264,12 @@ export default function DirectPharmacySales() {
           <div className="space-y-4">
             <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Medicine Name</th>
-                      <th className="px-4 py-3 text-left">Batch</th>
-                      <th className="px-4 py-3 text-left">Expiry</th>
-                      <th className="px-4 py-3 text-center w-24">Qty</th>
-                      <th className="px-4 py-3 text-right">Rate</th>
-                      <th className="px-4 py-3 text-center w-20">GST %</th>
-                      <th className="px-4 py-3 text-right">Amount</th>
-                      <th className="px-4 py-3 text-center w-12"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-50">
-                    {posStore.rows.map((item, idx) => (
-                      <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-4 py-3 relative">
+                <DataTable 
+                  columns={[
+                    {
+                      header: 'Medicine Name',
+                      render: (item, idx) => (
+                        <div className="relative">
                           <input 
                             type="text" 
                             value={item.codeName}
@@ -279,31 +298,57 @@ export default function DirectPharmacySales() {
                                 ))}
                             </div>
                           )}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-500 uppercase font-mono">{item.batchNo || <span className="text-slate-300">-</span>}</td>
-                        <td className="px-4 py-3 text-xs text-slate-500">{item.expiryDate || <span className="text-slate-300">-</span>}</td>
-                        <td className="px-4 py-3">
-                          <input 
-                            type="number" 
-                            value={item.qty}
-                            onChange={(e) => posStore.updateQty(idx, e.target.value)}
-                            className="w-full text-center border border-slate-200 rounded-lg py-1 outline-none focus:border-primary font-bold" 
-                          />
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          {item.rate}
-                        </td>
-                        <td className="px-4 py-3 text-center text-amber-600 font-bold text-xs">
+                        </div>
+                      )
+                    },
+                    {
+                      header: 'Batch',
+                      render: (item) => <div className="text-xs text-slate-500 uppercase font-mono">{item.batchNo || <span className="text-slate-300">-</span>}</div>
+                    },
+                    {
+                      header: 'Expiry',
+                      render: (item) => <div className="text-xs text-slate-500">{item.expiryDate || <span className="text-slate-300">-</span>}</div>
+                    },
+                    {
+                      header: <div className="text-center w-24">Qty</div>,
+                      render: (item, idx) => (
+                        <input 
+                          type="number" 
+                          value={item.qty}
+                          onChange={(e) => posStore.updateQty(idx, e.target.value)}
+                          className="w-full text-center border border-slate-200 rounded-lg py-1 outline-none focus:border-primary font-bold" 
+                        />
+                      )
+                    },
+                    {
+                      header: <div className="text-right">Rate</div>,
+                      render: (item) => <div className="text-right">{item.rate}</div>
+                    },
+                    {
+                      header: <div className="text-center w-20">GST %</div>,
+                      render: (item) => (
+                        <div className="text-center text-amber-600 font-bold text-xs">
                           {item.gst} <span className="text-amber-400">%</span>
-                        </td>
-                        <td className="px-4 py-3 text-right font-bold text-slate-900">₹{Number(item.amount).toFixed(2)}</td>
-                        <td className="px-4 py-3 text-center">
+                        </div>
+                      )
+                    },
+                    {
+                      header: <div className="text-right">Amount</div>,
+                      render: (item) => <div className="text-right font-bold text-slate-900">₹{Number(item.amount).toFixed(2)}</div>
+                    },
+                    {
+                      header: <div className="text-center w-12"></div>,
+                      render: (item, idx) => (
+                        <div className="text-center">
                           <button onClick={() => posStore.removeRow(idx)} className="p-1 text-slate-300 hover:text-red-500"><Trash2 className="w-4 h-4"/></button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      )
+                    }
+                  ]}
+                  data={posStore.rows}
+                  hover
+                  striped
+                />
               </div>
               <button onClick={posStore.addRow} className="w-full py-3 bg-slate-50 text-primary text-xs font-bold uppercase tracking-widest hover:bg-slate-100 transition-all border-t border-slate-100">+ Add Medicine Row</button>
             </div>

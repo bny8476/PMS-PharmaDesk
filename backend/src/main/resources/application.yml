@@ -41,6 +41,9 @@ spring:
 
 server:
   port: ${PORT:8080}
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain
 
 cors:
   allowed-origin: ${CORS_ALLOWED_ORIGIN:https://pharmacy-frontend.onrender.com}

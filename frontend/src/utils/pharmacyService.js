@@ -62,6 +62,17 @@ const pharmacyService = {
     const response = await api.get('/pharmacy/stocks');
     return response.data;
   },
+  getStockMovementInsights: async (params = {}) => {
+    const { startDate, endDate, limit } = params;
+    let url = '/analytics/stocks/movement';
+    const query = new URLSearchParams();
+    if (startDate) query.append('startDate', startDate);
+    if (endDate) query.append('endDate', endDate);
+    if (limit) query.append('limit', limit);
+    if (query.toString()) url += `?${query.toString()}`;
+    const response = await api.get(url);
+    return response.data;
+  },
   addStock: async (stockData) => {
     const response = await api.post('/pharmacy/stocks', stockData);
     return response.data;
@@ -101,6 +112,10 @@ const pharmacyService = {
   },
   updateMedicine: async (id, medicineData) => {
     const response = await api.put(`/pharmacy/medicines/${id}`, medicineData);
+    return response.data;
+  },
+  deleteMedicine: async (id) => {
+    const response = await api.delete(`/pharmacy/medicines/${id}`);
     return response.data;
   },
 

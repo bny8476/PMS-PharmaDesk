@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import PropTypes from 'prop-types';
 import { cn } from '../../utils/cn';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 export default function DataTable({ 
   columns, 
@@ -8,10 +10,38 @@ export default function DataTable({
   className,
   stickyHeader = true,
   striped = true,
-  hover = true
+  hover = true,
+  virtualized = false,
+  overflowVisible = false,
+  containerHeight = "600px",
+  rowHeight = 52,
+  onRowClick
 }) {
+  const parentRef = useRef(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: data?.length || 0,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => rowHeight,
+    overscan: 5,
+  });
+
+  const virtualItems = virtualized ? rowVirtualizer.getVirtualItems() : [];
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0]?.start || 0 : 0;
+  const paddingBottom = virtualItems.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1]?.end || 0)
+    : 0;
+
   return (
-    <div className={cn("overflow-x-auto bg-white rounded-xl shadow-sm border border-gray-200 relative", className)}>
+    <div 
+      ref={virtualized ? parentRef : null}
+      className={cn(
+        "bg-white rounded-xl shadow-sm border border-gray-200 relative", 
+        virtualized ? "overflow-y-auto" : overflowVisible ? "overflow-visible" : "overflow-x-auto",
+        className
+      )}
+      style={virtualized ? { maxHeight: containerHeight } : {}}
+    >
       <table className="w-full text-sm text-left border-collapse">
         <thead className={cn(
           "text-xs text-white uppercase bg-indigo-900 border-b border-indigo-800",
@@ -19,7 +49,7 @@ export default function DataTable({
         )}>
           <tr>
             {columns.map((col, i) => (
-              <th key={col.accessor || col.header || i} className="px-6 py-4 font-bold tracking-wider whitespace-nowrap">
+              <th key={i} className="px-6 py-4 font-bold tracking-wider whitespace-nowrap">
                 {col.header}
               </th>
             ))}
@@ -52,18 +82,48 @@ export default function DataTable({
                 </div>
               </td>
             </tr>
+          ) : virtualized ? (
+            <>
+              {paddingTop > 0 && <tr><td style={{ height: `${paddingTop}px` }} colSpan={columns.length} /></tr>}
+              {virtualItems.map((virtualRow) => {
+                const row = data[virtualRow.index];
+                return (
+                  <tr 
+                    key={row.id || row._id || virtualRow.index} 
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    onClick={() => onRowClick?.(row)}
+                    className={cn(
+                      "transition-colors",
+                      (hover || onRowClick) && "hover:bg-blue-50/60",
+                      onRowClick ? "cursor-pointer" : "cursor-default",
+                      striped && virtualRow.index % 2 !== 0 ? "bg-slate-50" : "bg-white"
+                    )}
+                  >
+                    {columns.map((col, j) => (
+                      <td key={j} className="px-6 py-4 font-medium text-gray-700 whitespace-nowrap">
+                        {col.accessor ? row[col.accessor] : col.render ? col.render(row, virtualRow.index) : null}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
+              {paddingBottom > 0 && <tr><td style={{ height: `${paddingBottom}px` }} colSpan={columns.length} /></tr>}
+            </>
           ) : (
             data.map((row, i) => (
               <tr 
                 key={row.id || row._id || i} 
+                onClick={() => onRowClick?.(row)}
                 className={cn(
                   "transition-colors",
-                  hover && "hover:bg-blue-50/60 cursor-default",
+                  (hover || onRowClick) && "hover:bg-blue-50/60",
+                  onRowClick ? "cursor-pointer" : "cursor-default",
                   striped && i % 2 !== 0 ? "bg-slate-50" : "bg-white"
                 )}
               >
                 {columns.map((col, j) => (
-                  <td key={col.accessor || col.header || j} className="px-6 py-4 font-medium text-gray-700 whitespace-nowrap">
+                  <td key={j} className="px-6 py-4 font-medium text-gray-700 whitespace-nowrap">
                     {col.accessor ? row[col.accessor] : col.render ? col.render(row, i) : null}
                   </td>
                 ))}
@@ -75,3 +135,23 @@ export default function DataTable({
     </div>
   );
 }
+
+DataTable.propTypes = {
+  columns: PropTypes.arrayOf(
+    PropTypes.shape({
+      header: PropTypes.node,
+      accessor: PropTypes.string,
+      render: PropTypes.func
+    })
+  ).isRequired,
+  data: PropTypes.array.isRequired,
+  loading: PropTypes.bool,
+  className: PropTypes.string,
+  stickyHeader: PropTypes.bool,
+  striped: PropTypes.bool,
+  hover: PropTypes.bool,
+  virtualized: PropTypes.bool,
+  containerHeight: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  rowHeight: PropTypes.number,
+  onRowClick: PropTypes.func
+};

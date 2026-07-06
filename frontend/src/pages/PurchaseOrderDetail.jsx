@@ -7,35 +7,25 @@ import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../config/roles.config';
-import { usePurchaseStore } from '../store/usePurchaseStore';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 export default function PurchaseOrderDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { activeRole } = useAuth();
+  const queryClient = useQueryClient();
   
-  const {
-    selectedPo: po,
-    poDetailLoading: isLoading,
-    poDetailError: isError,
-    fetchPoDetail,
-    clearPoDetail
-  } = usePurchaseStore(useShallow(state => ({
-    selectedPo: state.selectedPo,
-    poDetailLoading: state.poDetailLoading,
-    poDetailError: state.poDetailError,
-    fetchPoDetail: state.fetchPoDetail,
-    clearPoDetail: state.clearPoDetail
-  })));
+  const { data: po, isLoading, isError } = useQuery({
+    queryKey: ['purchase-order', id],
+    queryFn: async () => {
+      const res = await pharmacyService.api.get(`/pharmacy/purchase-orders/${id}`);
+      return res.data?.data || res.data;
+    }
+  });
   
   const [isUpdating, setIsUpdating] = useState(false);
   
   const printRef = useRef();
-
-  useEffect(() => {
-    fetchPoDetail(id);
-    return () => clearPoDetail();
-  }, [id, fetchPoDetail, clearPoDetail]);
 
   const handlePrint = () => {
     window.print();
@@ -46,7 +36,7 @@ export default function PurchaseOrderDetail() {
     try {
       await pharmacyService.api.put(`/pharmacy/purchase-orders/${id}/status`, { status: newStatus });
       toast.success(`Purchase Order marked as ${newStatus}`);
-      fetchPoDetail(id);
+      queryClient.invalidateQueries(['purchase-order', id]);
     } catch (error) {
       toast.error(error.response?.data?.message || 'Failed to update status');
     } finally {

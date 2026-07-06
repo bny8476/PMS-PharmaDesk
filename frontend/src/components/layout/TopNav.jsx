@@ -51,12 +51,14 @@ export default function TopNav({ onMenuClick }) {
             <Menu className="w-5 h-5" />
           </button>
           <div className="relative hidden md:block">
+            {/* Global Search (Pending implementation)
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input 
               type="text" 
               placeholder="Search patient UHID, medicine, bills..." 
               className="pl-10 pr-4 py-2 w-full max-w-[500px] md:w-[400px] lg:w-[500px] bg-white border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-accent/20 focus:border-accent transition-all"
             />
+            */}
           </div>
         </div>
 

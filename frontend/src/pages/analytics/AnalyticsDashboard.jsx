@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import api from '../../utils/api';
-import { TrendingUp, TrendingDown, IndianRupee, Package, Activity, AlertTriangle, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { TrendingUp, TrendingDown, IndianRupee, Package, Activity, AlertTriangle, ArrowUpRight, ArrowDownRight, Download } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { exportToCSV } from '../../utils/reportExport';
 
 export default function AnalyticsDashboard() {
   const { dateRange } = useOutletContext();
@@ -69,13 +70,15 @@ export default function AnalyticsDashboard() {
   return (
     <div className="space-y-6">
       {/* KPI Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard title="Total Sales Revenue" dataObj={data.totalSalesRevenue} icon={IndianRupee} prefix="₹" />
+        <KPICard title="Total Purchases" dataObj={data.totalPurchases} icon={Package} prefix="₹" />
+        <KPICard title="Estimated Profit Margin" dataObj={data.estimatedProfitMargin} icon={TrendingUp} suffix="%" />
+        <KPICard title="Net Revenue" dataObj={data.netRevenue} icon={TrendingUp} prefix="₹" />
         <KPICard title="Total Units Dispensed" dataObj={data.totalUnitsDispensed} icon={Package} />
         <KPICard title="Total Transactions" dataObj={data.totalTransactions} icon={Activity} />
         <KPICard title="Avg Transaction Value" dataObj={data.averageTransactionValue} icon={IndianRupee} prefix="₹" />
         <KPICard title="Total Returns Value" dataObj={data.totalReturnsValue} icon={AlertTriangle} prefix="₹" />
-        <KPICard title="Net Revenue" dataObj={data.netRevenue} icon={TrendingUp} prefix="₹" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -83,8 +86,8 @@ export default function AnalyticsDashboard() {
         <div className="lg:col-span-2 bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
           <h3 className="text-base font-semibold text-gray-800 mb-4">Revenue & Units Trend</h3>
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.revenueTrend}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <LineChart data={Array.isArray(data.revenueTrend) ? data.revenueTrend : []}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                 <XAxis dataKey="dateLabel" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} dy={10} />
                 <YAxis yAxisId="left" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} dx={-10} tickFormatter={(v) => `₹${v}`} />
@@ -101,11 +104,23 @@ export default function AnalyticsDashboard() {
         </div>
 
         {/* Fast Moving */}
-        <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-          <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center">
-            <TrendingUp className="w-5 h-5 text-green-500 mr-2" />
-            Fast-Moving Medicines
-          </h3>
+        <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-base font-semibold text-gray-800 flex items-center">
+              <TrendingUp className="w-5 h-5 text-green-500 mr-2" />
+              Fast-Moving Medicines
+            </h3>
+            <button 
+              onClick={() => exportToCSV({
+                id: 'fast_moving_medicines',
+                headers: ['Medicine', 'Class', 'Units Dispensed', 'Value'],
+                columns: ['medicineName', 'drugClass', 'totalUnitsDispensed', 'totalSalesValue']
+              }, data.fastMovingMedicines)}
+              className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center bg-blue-50 px-3 py-1.5 rounded-md"
+            >
+              <Download className="w-4 h-4 mr-1"/> Export
+            </button>
+          </div>
           <div className="space-y-4">
             {data.fastMovingMedicines?.map((med, idx) => (
               <div key={idx} className="flex justify-between items-center border-b border-gray-100 pb-3 last:border-0 last:pb-0">
@@ -128,10 +143,22 @@ export default function AnalyticsDashboard() {
       
       {/* Slow Moving */}
       <div className="bg-white p-5 rounded-lg border border-gray-200 shadow-sm">
-        <h3 className="text-base font-semibold text-gray-800 mb-4 flex items-center">
-          <TrendingDown className="w-5 h-5 text-red-500 mr-2" />
-          Slow-Moving Medicines (Action Required)
-        </h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-base font-semibold text-gray-800 flex items-center">
+            <TrendingDown className="w-5 h-5 text-red-500 mr-2" />
+            Slow-Moving Medicines (Action Required)
+          </h3>
+          <button 
+            onClick={() => exportToCSV({
+              id: 'slow_moving_medicines',
+              headers: ['Medicine', 'Class', 'Units Dispensed', 'Current Stock', 'Value Locked'],
+              columns: ['medicineName', 'drugClass', 'totalUnitsDispensed', 'currentStockLevel', 'totalSalesValue']
+            }, data.slowMovingMedicines)}
+            className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center bg-blue-50 px-3 py-1.5 rounded-md"
+          >
+            <Download className="w-4 h-4 mr-1"/> Export to CSV
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

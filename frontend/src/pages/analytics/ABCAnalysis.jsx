@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import api from '../../utils/api';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
+import { exportToCSV } from '../../utils/reportExport';
 
 export default function ABCAnalysis() {
   const { dateRange } = useOutletContext();
@@ -104,7 +105,16 @@ export default function ABCAnalysis() {
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-200 flex justify-between items-center">
           <h3 className="text-base font-semibold text-gray-800">SKU Classification Details</h3>
-          <button className="text-sm text-blue-600 font-medium hover:text-blue-700">Export to Excel</button>
+          <button 
+            onClick={() => exportToCSV({ 
+              id: 'abc_analysis', 
+              headers: ['Medicine Name', 'Category', 'Revenue Contribution', '% of Total', 'Cumulative %', 'Units Dispensed'], 
+              columns: ['medicineName', 'category', 'revenueContribution', 'percentageOfTotal', 'cumulativePercentage', 'unitsDispensed'] 
+            }, data)}
+            className="text-sm text-blue-600 font-medium hover:text-blue-700"
+          >
+            Export to CSV
+          </button>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">

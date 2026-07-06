@@ -1,0 +1,1 @@
+ALTER TABLE doctors ADD COLUMN created_by VARCHAR(255);

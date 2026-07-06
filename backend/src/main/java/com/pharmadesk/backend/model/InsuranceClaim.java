@@ -24,11 +24,11 @@ public class InsuranceClaim {
     private LocalDate claimDate = LocalDate.now();
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "bill_id", nullable = false)
+    @JoinColumn(name = "bill_id")
     private PharmacyBill bill;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "patient_id", nullable = false)
+    @JoinColumn(name = "patient_id")
     private Patient patient;
 
     @Column(name = "patient_name", nullable = false, length = 100)

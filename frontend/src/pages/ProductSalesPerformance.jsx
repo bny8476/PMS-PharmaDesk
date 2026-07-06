@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { ArrowUpRight, ArrowDownRight, Loader2, Info } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Loader2, Info, Download } from 'lucide-react';
+import { exportToCSV } from '../utils/reportExport';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
 import DataTable from '../components/ui/DataTable';
 import Pagination from '../components/ui/Pagination';
@@ -34,6 +36,7 @@ export default function ProductSalesPerformance() {
   const [activeTab, setActiveTab] = useState('landing');
   const [dateFilter, setDateFilter] = useState('This Month');
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
 
   const { start, end } = useMemo(() => getDateRange(dateFilter), [dateFilter]);
 
@@ -161,12 +164,37 @@ export default function ProductSalesPerformance() {
 
     return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <h3 className="text-md font-bold text-slate-700">Fast Moving Medicines (Top 5)</h3>
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="flex justify-between items-end">
+          <h3 className="text-md font-bold text-slate-700">Fast Moving Medicines (Top 5)</h3>
+          <button 
+            onClick={() => exportToCSV({
+              id: 'fast_moving',
+              headers: ['Medicine', 'Class', 'Units Dispensed', 'Transactions', 'Current Stock'],
+              columns: ['medicineName', 'drugClass', 'totalUnitsDispensed', 'numberOfTransactions', 'currentStockLevel']
+            }, fast)}
+            className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center bg-blue-50 px-3 py-1.5 rounded-md"
+          >
+            <Download className="w-4 h-4 mr-1"/> Export
+          </button>
+        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mt-2">
           <DataTable columns={cols} data={fast} hover striped />
         </div>
-        <h3 className="text-md font-bold text-slate-700 mt-8">Slow/Non-Moving Medicines</h3>
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        
+        <div className="flex justify-between items-end mt-8">
+          <h3 className="text-md font-bold text-slate-700">Slow/Non-Moving Medicines</h3>
+          <button 
+            onClick={() => exportToCSV({
+              id: 'slow_moving',
+              headers: ['Medicine', 'Class', 'Units Dispensed', 'Transactions', 'Current Stock'],
+              columns: ['medicineName', 'drugClass', 'totalUnitsDispensed', 'numberOfTransactions', 'currentStockLevel']
+            }, slow)}
+            className="text-sm text-blue-600 font-medium hover:text-blue-700 flex items-center bg-blue-50 px-3 py-1.5 rounded-md"
+          >
+            <Download className="w-4 h-4 mr-1"/> Export
+          </button>
+        </div>
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mt-2">
           <DataTable columns={cols} data={slow} hover striped />
         </div>
       </div>
@@ -187,6 +215,18 @@ export default function ProductSalesPerformance() {
 
     return (
       <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        <div className="flex justify-end mb-4">
+          <button 
+            onClick={() => exportToCSV({
+              id: 'abc_analysis',
+              headers: ['Medicine', 'Category', 'Revenue Contribution', 'Units Dispensed'],
+              columns: ['medicineName', 'category', 'revenueContribution', 'unitsDispensed']
+            }, abcData || [])}
+            className="text-sm text-blue-600 font-medium hover:text-blue-700 bg-blue-50 px-3 py-1.5 rounded-md flex items-center"
+          >
+            <Download className="w-4 h-4 mr-1"/> Export to CSV
+          </button>
+        </div>
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <DataTable columns={cols} data={abcData || []} hover striped />
         </div>

@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { ShieldAlert, RefreshCw, ClipboardList, CheckCircle2, Lock, Unlock, Search, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import pharmacyService from '../utils/pharmacyService';
 import OTPVerificationModal from '../components/auth/OTPVerificationModal';
 
@@ -8,65 +10,87 @@ export default function Narcotics() {
   const [isVerified, setIsVerified] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
 
-  const [medicines, setMedicines] = useState([]);
   const [selectedMedId, setSelectedMedId] = useState('');
-  const [registerEntries, setRegisterEntries] = useState([]);
-  const [loading, setLoading] = useState(false);
 
   // Reconciliation form states
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [reconciliation, setReconciliation] = useState(null);
 
   const [physicalCount, setPhysicalCount] = useState('');
   const [discrepancyReason, setDiscrepancyReason] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     // Open verification by default
     if (!isVerified) {
       setShowOtpModal(true);
-    } else {
-      loadMedicines();
     }
   }, [isVerified]);
 
-  const loadMedicines = async () => {
-    try {
+  const { data: medicines = [] } = useQuery({
+    queryKey: ['restricted-medicines'],
+    queryFn: async () => {
       const res = await pharmacyService.getMedicines();
-      // Filter for schedule X or Narcotic
-      const list = (res.data || res || []).filter(m => 
+      return (res.data || res || []).filter(m => 
         ['Schedule X', 'Narcotic'].includes(m.schedule)
       );
-      setMedicines(list);
-    } catch {
-      toast.error('Failed to load restricted medicines list');
-    }
-  };
+    },
+    enabled: isVerified
+  });
 
-  const loadRegister = async () => {
-    if (!selectedMedId) return;
-    setLoading(true);
-    try {
+  const { data: registerEntries = [], isLoading: loading } = useQuery({
+    queryKey: ['narcotic-register', selectedMedId],
+    queryFn: async () => {
       const from = '2026-01-01'; // Fetch all from year start
       const to = new Date().toISOString().split('T')[0];
       const res = await pharmacyService.getNarcoticRegister(selectedMedId, from, to);
-      setRegisterEntries(res.data || res || []);
-      
-      const reconRes = await pharmacyService.getNarcoticMonthlyReconciliation(selectedMedId, month, year);
-      setReconciliation(reconRes.data || reconRes || null);
-    } catch {
-      toast.error('Failed to load narcotic log registry');
-    } finally {
-      setLoading(false);
-    }
+      return res.data || res || [];
+    },
+    enabled: !!selectedMedId && isVerified
+  });
+
+  const { data: reconciliation = null } = useQuery({
+    queryKey: ['narcotic-reconciliation', selectedMedId, month, year],
+    queryFn: async () => {
+      const res = await pharmacyService.getNarcoticMonthlyReconciliation(selectedMedId, month, year);
+      return res.data || res || null;
+    },
+    enabled: !!selectedMedId && isVerified
+  });
+
+  const loadRegister = () => {
+    queryClient.invalidateQueries(['narcotic-register', selectedMedId]);
+    queryClient.invalidateQueries(['narcotic-reconciliation', selectedMedId, month, year]);
   };
 
-  useEffect(() => {
-    if (selectedMedId) {
-      loadRegister();
-    }
-  }, [selectedMedId, month, year]);
+  const reconcileMutation = useMutation({
+    mutationFn: (payload) => pharmacyService.api.post('/pharmacy/narcotic-register/reconciliation', payload),
+    onSuccess: (res) => {
+      if (res.data?.success || res.data?.id) {
+        toast.success('Monthly NDPS reconciliation locked successfully');
+        setPhysicalCount('');
+        setDiscrepancyReason('');
+        loadRegister();
+      }
+    },
+    onError: () => toast.error('Failed to submit monthly reconciliation')
+  });
+
+  const tableContainerRef = useRef(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: registerEntries?.length || 0,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 52,
+    overscan: 5,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0]?.start || 0 : 0;
+  const paddingBottom = virtualItems.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1]?.end || 0)
+    : 0;
 
   const handleReconcile = async (e) => {
     e.preventDefault();
@@ -74,33 +98,17 @@ export default function Narcotics() {
       toast.error('Please enter physical stock count');
       return;
     }
-    setSubmitting(true);
-    try {
-      // POST reconciliation endpoint is part of the API.
-      // We will create the record using our controller. Let's look at controller mappings for reconciliation if needed,
-      // or we can call `/pharmacy/narcotic-register/reconcile`. Let's check how the endpoint in controller was defined.
-      // Wait, let's call the REST endpoint via api.post:
-      const payload = {
-        medicine: { id: parseInt(selectedMedId) },
-        month: parseInt(month),
-        year: parseInt(year),
-        systemStock: reconciliation?.systemCount || 0,
-        physicalCount: parseInt(physicalCount),
-        discrepancyReason: discrepancyReason || ''
-      };
-      
-      const res = await pharmacyService.api.post('/pharmacy/narcotic-register/reconciliation', payload);
-      if (res.data?.success || res.data?.id) {
-        toast.success('Monthly NDPS reconciliation locked successfully');
-        setPhysicalCount('');
-        setDiscrepancyReason('');
-        loadRegister();
-      }
-    } catch (err) {
-      toast.error('Failed to submit monthly reconciliation');
-    } finally {
-      setSubmitting(false);
-    }
+    
+    const payload = {
+      medicine: { id: parseInt(selectedMedId) },
+      month: parseInt(month),
+      year: parseInt(year),
+      systemStock: reconciliation?.systemCount || 0,
+      physicalCount: parseInt(physicalCount),
+      discrepancyReason: discrepancyReason || ''
+    };
+    
+    reconcileMutation.mutate(payload);
   };
 
   if (!isVerified) {
@@ -165,39 +173,44 @@ export default function Narcotics() {
             <div className="px-5 py-4 border-b border-slate-100">
               <h3 className="text-sm font-bold text-slate-700">Audit Trail Ledger</h3>
             </div>
-            <div className="overflow-auto max-h-[500px]">
+            <div ref={tableContainerRef} className="overflow-auto max-h-[500px] relative">
               <table className="w-full text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase">Date</th>
-                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase">Ref / Batch</th>
-                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase">Action</th>
-                    <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase">In</th>
-                    <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase">Out</th>
-                    <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase">Closing</th>
-                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase">User</th>
+                <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-[0_1px_0_0_#e2e8f0]">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">Date</th>
+                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">Ref / Batch</th>
+                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">Action</th>
+                    <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">In</th>
+                    <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">Out</th>
+                    <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">Closing</th>
+                    <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase bg-slate-50">User</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {registerEntries.map(entry => (
-                    <tr key={entry.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                      <td className="px-4 py-3 text-slate-400 font-mono">{entry.createdAt?.split('T')?.[0] || entry.transactionDate}</td>
-                      <td className="px-4 py-3">
-                        <div className="font-bold text-slate-700">{entry.referenceNumber}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">Bth: {entry.batchNumber}</div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600">{entry.transactionType}</td>
-                      <td className="px-4 py-3 text-right text-emerald-600 font-bold">
-                        {entry.transactionType === 'INWARD' || entry.quantityIn > 0 ? `+${entry.quantityIn || entry.quantity}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-red-600 font-bold">
-                        {entry.transactionType === 'OUTWARD' || entry.quantityOut > 0 ? `-${entry.quantityOut || entry.quantity}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-800">{entry.closingBalance}</td>
-                      <td className="px-4 py-3 text-slate-500">{entry.pharmacistName || entry.verifiedBy}</td>
-                    </tr>
-                  ))}
-                  {registerEntries.length === 0 && (
+                  {paddingTop > 0 && <tr><td style={{ height: `${paddingTop}px` }} colSpan="7" /></tr>}
+                  {virtualItems.map(virtualRow => {
+                    const entry = registerEntries[virtualRow.index];
+                    return (
+                      <tr key={entry.id || virtualRow.index} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                        <td className="px-4 py-3 text-slate-400 font-mono">{entry.createdAt?.split('T')?.[0] || entry.transactionDate}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-bold text-slate-700">{entry.referenceNumber}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">Bth: {entry.batchNumber}</div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-600">{entry.transactionType}</td>
+                        <td className="px-4 py-3 text-right text-emerald-600 font-bold">
+                          {entry.transactionType === 'INWARD' || entry.quantityIn > 0 ? `+${entry.quantityIn || entry.quantity}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right text-red-600 font-bold">
+                          {entry.transactionType === 'OUTWARD' || entry.quantityOut > 0 ? `-${entry.quantityOut || entry.quantity}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-slate-800">{entry.closingBalance}</td>
+                        <td className="px-4 py-3 text-slate-500">{entry.pharmacistName || entry.verifiedBy}</td>
+                      </tr>
+                    );
+                  })}
+                  {paddingBottom > 0 && <tr><td style={{ height: `${paddingBottom}px` }} colSpan="7" /></tr>}
+                  {(!Array.isArray(registerEntries) || registerEntries.length === 0) && (
                     <tr>
                       <td colSpan="7" className="text-center py-12 text-slate-400">No logs in this audit trail.</td>
                     </tr>
@@ -280,7 +293,7 @@ export default function Narcotics() {
                   </div>
                   <button
                     type="submit"
-                    disabled={submitting}
+                    disabled={reconcileMutation.isPending}
                     className="w-full py-2 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                   >
                     <Lock className="w-3.5 h-3.5" /> Submit Audit Reconciliation

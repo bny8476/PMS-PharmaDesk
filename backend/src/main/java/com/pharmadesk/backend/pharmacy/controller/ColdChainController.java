@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.StorageUnit;
 import com.pharmadesk.backend.model.TemperatureLog;
@@ -33,7 +34,7 @@ public class ColdChainController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER','ROLE_PHARMACIST')")
-    public ResponseEntity<ApiResponse<TemperatureLog>> record(@RequestBody TemperatureLog log) {
+    public ResponseEntity<ApiResponse<TemperatureLog>> record(@Valid @RequestBody TemperatureLog log) {
         return ResponseEntity.ok(ApiResponse.success(service.recordTemperature(log), "Temperature recorded successfully"));
     }
 

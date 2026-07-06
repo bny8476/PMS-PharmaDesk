@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Eye, Pill, Search } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -8,37 +9,38 @@ import AppModal from '../components/ui/AppModal';
 import Badge from '../components/ui/Badge';
 import pharmacyService from '../utils/pharmacyService';
 import { toast } from 'react-hot-toast';
-import { usePrescriptionStore } from '../store/usePrescriptionStore';
-import { useShallow } from 'zustand/react/shallow';
+import { usePageData } from '../hooks/usePageData';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function PendingPrescriptions() {
-  const {
-    prescriptions: filteredPrescriptions,
-    prescriptionsLoading: loading,
-    prescriptionsSearchTerm: searchTerm,
-    prescriptionsDateRange: dateRange,
-    setPrescriptionsSearch: setSearchTerm,
-    setPrescriptionsDateRange: setDateRange,
-    fetchPrescriptions
-  } = usePrescriptionStore(useShallow(state => ({
-    prescriptions: state.prescriptions,
-    prescriptionsLoading: state.prescriptionsLoading,
-    prescriptionsSearchTerm: state.prescriptionsSearchTerm,
-    prescriptionsDateRange: state.prescriptionsDateRange,
-    setPrescriptionsSearch: state.setPrescriptionsSearch,
-    setPrescriptionsDateRange: state.setPrescriptionsDateRange,
-    fetchPrescriptions: state.fetchPrescriptions
-  })));
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
+  const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const { items: prescriptions = [], isLoading: loading } = usePageData(
+    'pending-prescriptions',
+    '/pharmacy/prescriptions/pending'
+  );
 
   const location = useLocation();
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
 
-  useEffect(() => {
-    fetchPrescriptions();
-  }, [location.key]);
-
-  // Filtering and API calling moved to useSalesStore
+  const filteredPrescriptions = prescriptions.filter(row => {
+    const sLower = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
+      row.patientName?.toLowerCase().includes(sLower) ||
+      row.doctorName?.toLowerCase().includes(sLower);
+    
+    const pDate = new Date(row.prescriptionDate);
+    const matchesFrom = !dateRange.from || pDate >= dateRange.from;
+    const matchesTo = !dateRange.to || pDate <= dateRange.to;
+    
+    return matchesSearch && matchesFrom && matchesTo;
+  });
   const columns = [
     { header: 'S.No', render: (_, i) => i + 1 },
     { header: 'ID', accessor: 'id' },
@@ -73,7 +75,7 @@ export default function PendingPrescriptions() {
     )}
   ];
 
-  if (loading) return <div className="p-8 text-center text-slate-500 font-bold">Loading Prescriptions...</div>;
+
 
   return (
     <div className="space-y-6">
@@ -82,7 +84,7 @@ export default function PendingPrescriptions() {
         <p className="text-sm text-gray-500 font-medium">Detailed tracking of all electronic prescriptions awaiting pharmacy fulfillment</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -90,8 +92,14 @@ export default function PendingPrescriptions() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredPrescriptions} hover striped />
-        <Pagination totalRecords={filteredPrescriptions.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={6} />
+        ) : (
+          <>
+            <DataTable columns={columns} data={pageSize === 'All' ? filteredPrescriptions : filteredPrescriptions.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+            <Pagination totalRecords={filteredPrescriptions.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       <AppModal 

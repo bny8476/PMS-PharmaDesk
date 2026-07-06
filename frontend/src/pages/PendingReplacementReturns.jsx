@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Eye, CheckCircle, XCircle } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -20,17 +21,20 @@ export default function PendingReplacementReturns() {
   const [selectedReturn, setSelectedReturn] = useState(null);
   const [returnToDelete, setReturnToDelete] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [returns, setReturns] = useState(mockRepReturns);
 
   useEffect(() => {
     // Re-fetch logic would go here if not using mocks
-    console.log('Refreshing Rep Returns for route:', location.key);
   }, [location.key]);
 
   const filteredReturns = returns.filter(row => {
-    const s = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
+    const s = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
       row.retNo.toLowerCase().includes(s) || 
       row.reqNo.toLowerCase().includes(s) || 
       row.ward.toLowerCase().includes(s) || 
@@ -101,7 +105,7 @@ export default function PendingReplacementReturns() {
         <p className="text-sm text-gray-500 font-medium">Verify and accept returned medicines from wards back into pharmacy stock</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -110,8 +114,8 @@ export default function PendingReplacementReturns() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredReturns} hover striped />
-        <Pagination totalRecords={filteredReturns.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        <DataTable columns={columns} data={pageSize === 'All' ? filteredReturns : filteredReturns.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+        <Pagination totalRecords={filteredReturns.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
 
       <AppModal 
@@ -146,28 +150,25 @@ export default function PendingReplacementReturns() {
             </div>
 
             <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-              <table className="w-full text-sm">
-                <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-bold">Medicine</th>
-                    <th className="px-4 py-3 text-center">Returned Qty</th>
-                    <th className="px-4 py-3 text-center w-48">Condition</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  <tr className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-4 font-medium text-slate-700">Amoxicillin 500mg</td>
-                    <td className="px-4 py-4 text-center font-bold">5</td>
-                    <td className="px-4 py-4">
+              <DataTable 
+                columns={[
+                  { header: 'Medicine', render: () => <span className="font-medium text-slate-700">Amoxicillin 500mg</span> },
+                  { header: <div className="text-center">Returned Qty</div>, render: () => <div className="text-center font-bold">5</div> },
+                  {
+                    header: <div className="text-center w-48">Condition</div>,
+                    render: () => (
                        <select className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold outline-none focus:ring-2 focus:ring-success/20">
                           <option>Good Condition</option>
                           <option>Damaged</option>
                           <option>Expired / Near Expiry</option>
                        </select>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                    )
+                  }
+                ]}
+                data={[{ id: 1 }]}
+                hover
+                striped
+              />
             </div>
           </div>
         )}

@@ -1,34 +1,85 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { useShallow } from 'zustand/react/shallow';
 import { CalendarX, RefreshCw, AlertTriangle, ArrowLeftRight, Trash2, ShieldAlert } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useExpiryStore } from '../store/useExpiryStore';
 
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import pharmacyService from '../utils/pharmacyService';
+
 export default function ExpiryTracker() {
-  const {
-    batches,
-    summary,
-    returns,
-    loading,
-    fetchAll: fetchExpiryData,
-    initiateReturn
-  } = useExpiryStore(useShallow(state => ({
-    batches: state.batches,
-    summary: state.summary,
-    returns: state.returns,
-    loading: state.loading,
-    fetchAll: state.fetchAll,
-    initiateReturn: state.initiateReturn
-  })));
-  const [submitting, setSubmitting] = useState(false);
+  const queryClient = useQueryClient();
+
+  const { data: batchesData, isLoading: batchesLoading } = useQuery({
+    queryKey: ['expiry-batches'],
+    queryFn: async () => {
+      const res = await pharmacyService.getExpiryBatches();
+      const data = res.data || res;
+      return Array.isArray(data) ? data : [];
+    }
+  });
+  const batches = batchesData || [];
+
+  const { data: summaryData, isLoading: summaryLoading } = useQuery({
+    queryKey: ['expiry-summary'],
+    queryFn: async () => {
+      const res = await pharmacyService.getExpirySummary();
+      return res.data || res;
+    }
+  });
+  const summary = summaryData || null;
+
+  const { data: returnsData, isLoading: returnsLoading } = useQuery({
+    queryKey: ['expiry-returns'],
+    queryFn: async () => {
+      const res = await pharmacyService.getExpiryReturns();
+      const data = res.data || res;
+      return Array.isArray(data) ? data : [];
+    }
+  });
+  const returns = returnsData || [];
+
+  const loading = batchesLoading || summaryLoading || returnsLoading;
+
+  const returnMutation = useMutation({
+    mutationFn: (data) => pharmacyService.initiateExpiryReturn(data),
+    onSuccess: () => {
+      toast.success('Return workflow initiated successfully');
+      queryClient.invalidateQueries(['expiry-batches']);
+      queryClient.invalidateQueries(['expiry-summary']);
+      queryClient.invalidateQueries(['expiry-returns']);
+      setSelectedBatch(null);
+      setReturnQty('');
+      setRemarks('');
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to initiate return');
+    }
+  });
 
   const [returnQty, setReturnQty] = useState('');
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [remarks, setRemarks] = useState('');
 
   useEffect(() => {
-    fetchExpiryData();
-  }, [fetchExpiryData]);
+    // fetchData functionality if needed
+  }, []);
+
+  const tableContainerRef = useRef(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: batches?.length || 0,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 52,
+    overscan: 5,
+  });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const paddingTop = virtualItems.length > 0 ? virtualItems[0]?.start || 0 : 0;
+  const paddingBottom = virtualItems.length > 0
+    ? rowVirtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1]?.end || 0)
+    : 0;
 
   const handleReturn = async (e) => {
     e.preventDefault();
@@ -41,19 +92,11 @@ export default function ExpiryTracker() {
       return;
     }
 
-    setSubmitting(true);
-    const ok = await initiateReturn({
+    returnMutation.mutate({
       batchId: selectedBatch.id,
       returnQuantity: parseInt(returnQty),
       remarks: remarks
     });
-    setSubmitting(false);
-
-    if (ok) {
-      setSelectedBatch(null);
-      setReturnQty('');
-      setRemarks('');
-    }
   };
 
   const getStatusBadge = (batch) => {
@@ -76,7 +119,11 @@ export default function ExpiryTracker() {
           <h2 className="text-2xl font-bold text-slate-800">Expiry & Batch Tracker</h2>
           <p className="text-sm text-slate-400">Track drug expiries, near-expiry alerts, and supplier return workflows.</p>
         </div>
-        <button onClick={fetchExpiryData} disabled={loading} className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
+        <button onClick={() => {
+          queryClient.invalidateQueries(['expiry-batches']);
+          queryClient.invalidateQueries(['expiry-summary']);
+          queryClient.invalidateQueries(['expiry-returns']);
+        }} disabled={loading} className="p-2 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
           <RefreshCw className={`w-4 h-4 text-slate-600 ${loading ? 'animate-spin' : ''}`} />
         </button>
       </div>
@@ -110,42 +157,54 @@ export default function ExpiryTracker() {
             <h3 className="text-sm font-bold text-slate-700">Batch Expiry Ledger</h3>
             <span className="text-xs text-slate-400">{batches.length} active batches</span>
           </div>
-          <div className="overflow-auto max-h-[500px]">
+          <div ref={tableContainerRef} className="overflow-auto max-h-[500px] relative">
             <table className="w-full text-xs">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 sticky top-0">
-                  <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase tracking-wider">Medicine</th>
-                  <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase tracking-wider">Batch No</th>
-                  <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase tracking-wider">Expiry</th>
-                  <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase tracking-wider">Stock Qty</th>
-                  <th className="text-center px-4 py-3 font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3"></th>
+              <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-[0_1px_0_0_#e2e8f0]">
+                <tr>
+                  <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Medicine</th>
+                  <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Batch No</th>
+                  <th className="text-left px-4 py-3 font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Expiry</th>
+                  <th className="text-right px-4 py-3 font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Stock Qty</th>
+                  <th className="text-center px-4 py-3 font-bold text-slate-500 uppercase tracking-wider bg-slate-50">Status</th>
+                  <th className="px-4 py-3 bg-slate-50"></th>
                 </tr>
               </thead>
               <tbody>
-                {batches.map(batch => (
-                  <tr key={batch.id} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                    <td className="px-4 py-3 font-bold text-slate-700">
-                      <div>{batch.medicineName}</div>
-                      <div className="text-[10px] text-slate-400 font-mono">{batch.medicineCode}</div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-600">{batch.batchNumber}</td>
-                    <td className="px-4 py-3 text-slate-500">{batch.expiryDate}</td>
-                    <td className="px-4 py-3 text-right font-bold text-slate-700">{batch.quantity}</td>
-                    <td className="px-4 py-3 text-center">{getStatusBadge(batch)}</td>
-                    <td className="px-4 py-3 text-right">
-                      {batch.quantity > 0 && (
-                        <button
-                          onClick={() => setSelectedBatch(batch)}
-                          className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-colors"
-                        >
-                          Return Supplier
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-                {batches.length === 0 && (
+                {paddingTop > 0 && <tr><td style={{ height: `${paddingTop}px` }} colSpan="6" /></tr>}
+                {virtualItems.map(virtualRow => {
+                  const batch = batches[virtualRow.index];
+                  return (
+                    <tr key={batch.id || virtualRow.index} data-index={virtualRow.index} ref={rowVirtualizer.measureElement} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                      <td className="px-4 py-3 font-bold text-slate-700">
+                        <div>{batch.medicineName}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{batch.medicineCode}</div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-slate-600">{batch.batchNumber}</td>
+                      <td className="px-4 py-3 text-slate-500">{batch.expiryDate}</td>
+                      <td className="px-4 py-3 text-right font-bold text-slate-700">
+                        <div className="flex flex-col items-end">
+                          <span>{batch.quantity}</span>
+                          {(batch.unitsPerPack > 1 || batch.medicine?.unitsPerPack > 1) && (
+                            <span className="text-[10px] text-slate-400 mt-0.5 font-normal">= {batch.quantity * (batch.unitsPerPack || batch.medicine?.unitsPerPack)} units</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-center">{getStatusBadge(batch)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {batch.quantity > 0 && (
+                          <button
+                            onClick={() => setSelectedBatch(batch)}
+                            className="px-2.5 py-1 bg-red-600 text-white text-[10px] font-bold rounded-lg hover:bg-red-700 transition-colors"
+                          >
+                            Return Supplier
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {paddingBottom > 0 && <tr><td style={{ height: `${paddingBottom}px` }} colSpan="6" /></tr>}
+                {(!Array.isArray(batches) || batches.length === 0) && (
                   <tr>
                     <td colSpan="6" className="text-center py-10 text-slate-400">No batches currently tracked.</td>
                   </tr>
@@ -196,7 +255,7 @@ export default function ExpiryTracker() {
                 </div>
                 <button
                   type="submit"
-                  disabled={submitting}
+                  disabled={returnMutation.isPending}
                   className="w-full py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
                   <ArrowLeftRight className="w-3.5 h-3.5" /> Submit Return Workflow
@@ -216,7 +275,7 @@ export default function ExpiryTracker() {
               <h3 className="text-sm font-bold text-slate-700">Recent Returns</h3>
             </div>
             <div className="divide-y divide-slate-50 max-h-[300px] overflow-auto">
-              {returns.map(ret => (
+              {(Array.isArray(returns) ? returns : []).map(ret => (
                 <div key={ret.id} className="p-4 text-xs space-y-1">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-700">{ret.batchNumber}</span>
@@ -226,7 +285,7 @@ export default function ExpiryTracker() {
                   {ret.remarks && <div className="text-[10px] text-slate-400 italic">"{ret.remarks}"</div>}
                 </div>
               ))}
-              {returns.length === 0 && (
+              {(!Array.isArray(returns) || returns.length === 0) && (
                 <div className="p-4 text-center text-slate-400 text-xs">No returns recorded.</div>
               )}
             </div>

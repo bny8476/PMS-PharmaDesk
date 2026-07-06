@@ -1,5 +1,5 @@
 import React from 'react';
-import { Printer, Download, X } from 'lucide-react';
+import { Printer, Download, X, MessageCircle } from 'lucide-react';
 import { numberToWords } from '../../utils/numberToWords';
 import api from '../../utils/api';
 
@@ -40,12 +40,34 @@ export default function PharmacyInvoice({ bill, onClose }) {
     }
   };
 
+  const handleWhatsApp = () => {
+    if (!bill.patient?.phone) return;
+    let phone = bill.patient.phone.replace(/\D/g, '');
+    if (phone.length === 10) {
+      phone = `91${phone}`;
+    }
+    const message = `Hi ${bill.patientName || 'Customer'}, your PharmaDesk bill ${bill.billNumber} for ₹${safeNum(bill.netAmount).toFixed(2)} is ready. Thank you!`;
+    const waLink = `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+    window.open(waLink, '_blank');
+  };
+
   return (
     <div className="flex flex-col bg-white h-full max-h-[95vh] overflow-hidden rounded-xl">
       {/* Action Bar */}
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50 print:hidden">
-        <h3 className="text-lg font-bold text-gray-900">Tax Invoice Preview</h3>
+        <div>
+          <h3 className="text-lg font-bold text-gray-900">Tax Invoice Preview</h3>
+          <p className="text-[11px] text-gray-500 mt-0.5">Hint: WhatsApp does not auto-attach PDFs. Download it first to attach manually.</p>
+        </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={handleWhatsApp}
+            disabled={!bill.patient?.phone}
+            title={!bill.patient?.phone ? "No phone number on file" : "Send via WhatsApp"}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-bold hover:bg-green-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <MessageCircle className="w-4 h-4" /> WhatsApp
+          </button>
           <button onClick={handlePrint} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-bold hover:bg-blue-700 transition-all">
             <Printer className="w-4 h-4" /> Print Invoice
           </button>
@@ -204,6 +226,12 @@ export default function PharmacyInvoice({ bill, onClose }) {
                   <span>Total Tax</span>
                   <span className="text-gray-900">{safeNum(bill.taxAmount).toFixed(2)}</span>
                 </div>
+                {safeNum(bill.discountAmount) > 0 && (
+                  <div className="px-6 py-3 flex justify-between text-[11px] font-bold text-emerald-600 bg-emerald-50/30">
+                    <span>Discount Applied</span>
+                    <span>(-) {safeNum(bill.discountAmount).toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="px-6 py-3 flex justify-between text-xs font-black bg-gray-50 border-y border-gray-200 text-gray-900">
                   <span className="uppercase tracking-tighter">Total</span>
                   <span>Rs.{safeNum(bill.netAmount).toFixed(2)}</span>

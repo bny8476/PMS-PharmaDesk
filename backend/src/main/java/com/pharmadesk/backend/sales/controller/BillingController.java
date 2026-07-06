@@ -12,6 +12,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
 
 import java.time.LocalDateTime;
 
@@ -26,7 +27,7 @@ public class BillingController {
     }
 
     @GetMapping
-    public ResponseEntity<Page<PharmacyBill>> getBills(
+    public ResponseEntity<ApiResponse<Page<PharmacyBill>>> getBills(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) String type,
@@ -36,36 +37,36 @@ public class BillingController {
         
         Pageable pageable = PageRequest.of(page, size);
         Page<PharmacyBill> bills = billRepository.searchBills(type, status, from, to, pageable);
-        return ResponseEntity.ok(bills);
+        return ResponseEntity.ok(ApiResponse.success(bills, "Bills fetched successfully"));
     }
 
     @PostMapping
-    public ResponseEntity<PharmacyBill> createBill(@RequestBody PharmacyBill bill) {
+    public ResponseEntity<ApiResponse<PharmacyBill>> createBill(@RequestBody PharmacyBill bill) {
         // Implementation for bill creation
-        return ResponseEntity.ok(billRepository.save(bill));
+        return ResponseEntity.ok(ApiResponse.success(billRepository.save(bill), "Bill created successfully"));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<PharmacyBill> getBill(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<PharmacyBill>> getBill(@PathVariable Long id) {
         return billRepository.findById(id)
-                .map(ResponseEntity::ok)
+                .map(bill -> ResponseEntity.ok(ApiResponse.success(bill, "Bill fetched successfully")))
                 .orElse(ResponseEntity.notFound().build());
     }
 
     @PutMapping("/{id}/cancel")
     @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    public ResponseEntity<PharmacyBill> cancelBill(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<PharmacyBill>> cancelBill(@PathVariable Long id) {
         return billRepository.findById(id).map(bill -> {
             bill.setStatus("CANCELLED");
-            return ResponseEntity.ok(billRepository.save(bill));
+            return ResponseEntity.ok(ApiResponse.success(billRepository.save(bill), "Bill cancelled successfully"));
         }).orElse(ResponseEntity.notFound().build());
     }
 
     @PutMapping("/{id}/payment")
-    public ResponseEntity<PharmacyBill> updatePaymentStatus(@PathVariable Long id, @RequestBody String newStatus) {
+    public ResponseEntity<ApiResponse<PharmacyBill>> updatePaymentStatus(@PathVariable Long id, @RequestBody String newStatus) {
         return billRepository.findById(id).map(bill -> {
             bill.setStatus(newStatus);
-            return ResponseEntity.ok(billRepository.save(bill));
+            return ResponseEntity.ok(ApiResponse.success(billRepository.save(bill), "Payment status updated successfully"));
         }).orElse(ResponseEntity.notFound().build());
     }
 }

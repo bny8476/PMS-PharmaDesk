@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import { useLocation } from 'react-router-dom';
 import { Search, Plus, Eye, Printer, RotateCcw, CheckCircle } from 'lucide-react';
@@ -9,21 +10,18 @@ import AppModal from '../components/ui/AppModal';
 import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
+import { usePageData } from '../hooks/usePageData';
 import PharmacyInvoice from '../components/pharmacy/PharmacyInvoice';
-import { useReturnsStore } from '../store/useReturnsStore';
+import TableSkeleton from '../components/ui/TableSkeleton';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
 
 export default function DirectMedicineReturns() {
   const location = useLocation();
-  const {
-    returnsList: allReturnsList,
-    loading,
-    fetchReturns
-  } = useReturnsStore(useShallow(state => ({
-    returnsList: state.returnsList,
-    loading: state.loading,
-    fetchReturns: state.fetchReturns
-  })));
+  const queryClient = useQueryClient();
+  
+  const { items: allReturnsList = [], isLoading: loading } = usePageData('returns', '/pharmacy/returns');
   const returnsList = allReturnsList.filter(ret => ret.originalBill?.billType === 'OTC');
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [billNumber, setBillNumber] = useState('');
   const [selectedBill, setSelectedBill] = useState(null);
@@ -32,11 +30,11 @@ export default function DirectMedicineReturns() {
   const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
   const [invoiceToView, setInvoiceToView] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
-
-  useEffect(() => {
-    fetchReturns();
-  }, [location.key, fetchReturns]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const loadBill = async () => {
     const trimmedNo = billNumber.trim();
@@ -60,7 +58,20 @@ export default function DirectMedicineReturns() {
     }
   };
 
-  const handleSaveReturn = async () => {
+  const returnMutation = useMutation({
+    mutationFn: (itemsToReturn) => pharmacyService.initiateReturn(selectedBill.id, itemsToReturn, returnReason),
+    onSuccess: () => {
+      toast.success('Return processed successfully');
+      setIsModalOpen(false);
+      resetForm();
+      queryClient.invalidateQueries(['returns']);
+    },
+    onError: (error) => {
+      toast.error(error.response?.data?.message || 'Failed to save return');
+    }
+  });
+
+  const handleSaveReturn = () => {
     const itemsToReturn = returnItems
       .filter(item => item.checked && item.returnQty > 0)
       .map(item => ({
@@ -72,18 +83,7 @@ export default function DirectMedicineReturns() {
       toast.error('Please select items to return');
       return;
     }
-
-    try {
-      const response = await pharmacyService.initiateReturn(selectedBill.id, itemsToReturn, returnReason);
-      if (response.success) {
-        toast.success('Return processed successfully');
-        setIsModalOpen(false);
-        resetForm();
-        fetchReturns();
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || 'Failed to save return');
-    }
+    returnMutation.mutate(itemsToReturn);
   };
 
   const resetForm = () => {
@@ -126,7 +126,7 @@ export default function DirectMedicineReturns() {
         <p className="text-sm text-gray-500 font-medium">Manage returns for over-the-counter (OTC) transactions</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -138,21 +138,29 @@ export default function DirectMedicineReturns() {
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         {loading ? (
-          <div className="p-10 text-center text-slate-400 font-semibold italic">Loading returns...</div>
+          <TableSkeleton rows={5} columns={8} />
         ) : (
           <>
             <DataTable 
               columns={columns} 
-              data={returnsList.filter(row => {
-                const searchLower = searchTerm.toLowerCase();
-                const receiptNum = row.originalBill?.billNumber?.toLowerCase() || '';
-                const patientName = row.originalBill?.patientName?.toLowerCase() || '';
-                return !searchTerm || receiptNum.includes(searchLower) || patientName.includes(searchLower);
-              })} 
+              data={(() => {
+                const filtered = returnsList.filter(row => {
+                  const searchLower = debouncedSearch.toLowerCase();
+                  const receiptNum = row.originalBill?.billNumber?.toLowerCase() || '';
+                  const patientName = row.originalBill?.patientName?.toLowerCase() || '';
+                  return !debouncedSearch || receiptNum.includes(searchLower) || patientName.includes(searchLower);
+                });
+                return pageSize === 'All' ? filtered : filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+              })()} 
               hover 
               striped 
             />
-            <Pagination totalRecords={returnsList.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+            <Pagination totalRecords={returnsList.filter(row => {
+                  const searchLower = debouncedSearch.toLowerCase();
+                  const receiptNum = row.originalBill?.billNumber?.toLowerCase() || '';
+                  const patientName = row.originalBill?.patientName?.toLowerCase() || '';
+                  return !debouncedSearch || receiptNum.includes(searchLower) || patientName.includes(searchLower);
+                }).length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
           </>
         )}
       </div>
@@ -206,21 +214,12 @@ export default function DirectMedicineReturns() {
                </div>
 
                <div className="border border-gray-100 rounded-xl overflow-hidden shadow-sm">
-                 <table className="w-full text-sm">
-                   <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                     <tr>
-                       <th className="px-4 py-3 text-center w-10"></th>
-                       <th className="px-4 py-3 text-left">Medicine</th>
-                       <th className="px-4 py-3 text-center">Qty</th>
-                       <th className="px-4 py-3 text-center">Return Qty</th>
-                       <th className="px-4 py-3 text-right">Rate</th>
-                       <th className="px-4 py-4 text-right">Refund</th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-100 bg-white">
-                     {returnItems.map((item, idx) => (
-                       <tr key={item.id} className="hover:bg-slate-50/50">
-                         <td className="px-4 py-3 text-center">
+                 <DataTable 
+                   columns={[
+                     {
+                       header: <div className="text-center w-10"></div>,
+                       render: (item, idx) => (
+                         <div className="text-center">
                            <input 
                             type="checkbox" 
                             checked={item.checked}
@@ -232,12 +231,26 @@ export default function DirectMedicineReturns() {
                             }}
                             className="rounded accent-primary w-4 h-4 cursor-pointer"
                            />
-                         </td>
-                         <td className="px-4 py-3 font-medium text-slate-800">{item.stock?.medicine?.name}
+                         </div>
+                       )
+                     },
+                     {
+                       header: 'Medicine',
+                       render: (item) => (
+                         <div className="font-medium text-slate-800">
+                           {item.stock?.medicine?.name}
                            <div className="text-[10px] text-slate-400 font-mono">BATCH: {item.stock?.batchNumber}</div>
-                         </td>
-                         <td className="px-4 py-3 text-center font-bold text-slate-600">{item.quantity}</td>
-                         <td className="px-4 py-3 w-32">
+                         </div>
+                       )
+                     },
+                     {
+                       header: <div className="text-center">Qty</div>,
+                       render: (item) => <div className="text-center font-bold text-slate-600">{item.quantity}</div>
+                     },
+                     {
+                       header: <div className="text-center">Return Qty</div>,
+                       render: (item, idx) => (
+                         <div className="w-32">
                            <input 
                             type="number" 
                             min="0"
@@ -252,13 +265,22 @@ export default function DirectMedicineReturns() {
                             }}
                             className="w-20 mx-auto block text-center border border-slate-200 rounded-lg py-1 outline-none focus:border-red-400 text-red-600 font-black disabled:bg-slate-50" 
                            />
-                         </td>
-                         <td className="px-4 py-3 text-right text-slate-600 font-mono text-xs">₹{item.unitPrice.toFixed(2)}</td>
-                         <td className="px-4 py-3 text-right font-black text-red-500">₹{(item.unitPrice * item.returnQty).toFixed(2)}</td>
-                       </tr>
-                     ))}
-                   </tbody>
-                 </table>
+                         </div>
+                       )
+                     },
+                     {
+                       header: <div className="text-right">Rate</div>,
+                       render: (item) => <div className="text-right text-slate-600 font-mono text-xs">₹{item.unitPrice.toFixed(2)}</div>
+                     },
+                     {
+                       header: <div className="text-right">Refund</div>,
+                       render: (item) => <div className="text-right font-black text-red-500">₹{(item.unitPrice * item.returnQty).toFixed(2)}</div>
+                     }
+                   ]}
+                   data={returnItems}
+                   hover
+                   striped
+                 />
                </div>
 
                <div className="flex flex-col md:flex-row gap-8 items-center justify-between p-6 bg-slate-50 rounded-2xl border border-slate-100">

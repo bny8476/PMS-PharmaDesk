@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.GoodsReceiptNote;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -49,7 +50,7 @@ public class GoodsReceiptNoteController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_STOREKEEPER')")
-    public ResponseEntity<ApiResponse<GoodsReceiptNote>> create(@RequestBody GoodsReceiptNote grn) {
+    public ResponseEntity<ApiResponse<GoodsReceiptNote>> create(@Valid @RequestBody GoodsReceiptNote grn) {
         return ResponseEntity.ok(ApiResponse.success(grnService.createGrn(grn), "GRN created"));
     }
 

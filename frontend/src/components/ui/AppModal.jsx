@@ -1,4 +1,5 @@
 import React, { Fragment } from 'react';
+import PropTypes from 'prop-types';
 import { Dialog, Transition } from '@headlessui/react';
 import { X } from 'lucide-react';
 import { cn } from '../../utils/cn';
@@ -85,3 +86,13 @@ export default function AppModal({
     </Transition.Root>
   );
 }
+
+AppModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  title: PropTypes.node.isRequired,
+  children: PropTypes.node.isRequired,
+  footer: PropTypes.node,
+  maxWidth: PropTypes.string,
+  size: PropTypes.string
+};

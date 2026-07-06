@@ -53,4 +53,15 @@ public class Patient extends BaseEntity {
     public void setAddress(String address) { this.address = address; }
     public String getInsuranceId() { return insuranceId; }
     public void setInsuranceId(String insuranceId) { this.insuranceId = insuranceId; }
+
+    @Column(name = "preferred_delivery")
+    private Boolean preferredDelivery = false;
+
+    @Column(name = "delivery_address", columnDefinition = "TEXT")
+    private String deliveryAddress;
+
+    public Boolean getPreferredDelivery() { return preferredDelivery; }
+    public void setPreferredDelivery(Boolean preferredDelivery) { this.preferredDelivery = preferredDelivery; }
+    public String getDeliveryAddress() { return deliveryAddress; }
+    public void setDeliveryAddress(String deliveryAddress) { this.deliveryAddress = deliveryAddress; }
 }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Plus, Search, Eye, Printer, Layers, Trash2 } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -19,15 +20,17 @@ export default function ConsolidatedBills() {
 
   useEffect(() => {
     // Re-fetch logic would go here if not using mocks
-    console.log('Refreshing Consolidated Bills for route:', location.key);
   }, [location.key]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedConsolidated, setSelectedConsolidated] = useState(null);
 
-  // Search State
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Merge State
   const [patientSearch, setPatientSearch] = useState('');
@@ -113,12 +116,14 @@ export default function ConsolidatedBills() {
   ];
 
   const filteredConsolidated = consolidatedList.filter(cb => {
-    const s = searchTerm.toLowerCase();
-    return !searchTerm || 
+    const s = debouncedSearch.toLowerCase();
+    return !debouncedSearch || 
       cb.cBillNo.toLowerCase().includes(s) || 
       cb.patient.toLowerCase().includes(s) || 
       cb.uhid.toLowerCase().includes(s);
   });
+
+  const paginatedConsolidated = pageSize === 'All' ? filteredConsolidated : filteredConsolidated.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   return (
     <div className="space-y-6">
@@ -127,7 +132,7 @@ export default function ConsolidatedBills() {
         <p className="text-sm text-gray-500 font-medium">Merge multiple pharmacy bills into a single consolidated invoice</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -138,8 +143,8 @@ export default function ConsolidatedBills() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredConsolidated} hover striped />
-        <Pagination totalRecords={filteredConsolidated.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        <DataTable columns={columns} data={paginatedConsolidated} hover striped />
+        <Pagination totalRecords={filteredConsolidated.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
 
       <AppModal 
@@ -176,40 +181,35 @@ export default function ConsolidatedBills() {
                 <Layers className="w-4 h-4 text-primary" /> Pending Bills for Merge
              </h4>
              <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-sm">
-                <table className="w-full text-sm">
-                   <thead className="bg-[#1e293b] text-white text-[10px] uppercase tracking-widest">
-                      <tr>
-                         <th className="px-4 py-3 text-center w-12">
+                <DataTable 
+                   columns={[
+                      { 
+                         header: (
                             <input 
                               type="checkbox" 
                               className="rounded"
                               onChange={(e) => setPendingBills(pendingBills.map(b => ({ ...b, selected: e.target.checked })))}
                               checked={pendingBills.length > 0 && pendingBills.every(b => b.selected)}
                             />
-                         </th>
-                         <th className="px-4 py-3 text-left">Bill No</th>
-                         <th className="px-4 py-3 text-left">Date</th>
-                         <th className="px-4 py-3 text-right">Amount</th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-slate-50 bg-white">
-                      {pendingBills.map((bill) => (
-                         <tr key={bill.id} className="hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => toggleBillSelection(bill.id)}>
-                            <td className="px-4 py-4 text-center">
-                              <input 
-                                type="checkbox" 
-                                checked={bill.selected}
-                                onChange={() => {}} // Handled by tr click
-                                className="rounded text-primary" 
-                              />
-                            </td>
-                            <td className="px-4 py-4 font-bold text-primary">{bill.id}</td>
-                            <td className="px-4 py-4 text-slate-500 font-medium">{bill.date}</td>
-                            <td className="px-4 py-4 text-right font-black text-slate-700">₹{bill.amount.toFixed(2)}</td>
-                         </tr>
-                      ))}
-                   </tbody>
-                </table>
+                         ),
+                         render: (bill) => (
+                            <input 
+                              type="checkbox" 
+                              checked={bill.selected}
+                              onChange={() => {}} // Handled by row click
+                              className="rounded text-primary" 
+                            />
+                         )
+                      },
+                      { header: 'Bill No', accessor: 'id', render: (bill) => <span className="font-bold text-primary">{bill.id}</span> },
+                      { header: 'Date', accessor: 'date', render: (bill) => <span className="text-slate-500 font-medium">{bill.date}</span> },
+                      { header: 'Amount', accessor: 'amount', render: (bill) => <span className="font-black text-slate-700">₹{bill.amount.toFixed(2)}</span> }
+                   ]}
+                   data={pendingBills}
+                   onRowClick={(row) => toggleBillSelection(row.id)}
+                   hover
+                   striped
+                />
              </div>
           </div>
 

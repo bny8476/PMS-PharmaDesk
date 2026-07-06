@@ -41,6 +41,7 @@ public class SaleService {
     private final com.pharmadesk.backend.service.StockAlertService alertService;
     private final MeterRegistry meterRegistry;
     private final com.pharmadesk.backend.pharmacy.repository.PrescriptionRepository prescriptionRepository;
+    private final com.pharmadesk.backend.repository.DoctorRepository doctorRepository;
 
     public SaleService(MedicineStockRepository stockRepository, 
                        PharmacyBillRepository billRepository, 
@@ -49,7 +50,8 @@ public class SaleService {
                        MedicineRepository medicineRepository,
                        com.pharmadesk.backend.service.StockAlertService alertService,
                        MeterRegistry meterRegistry,
-                       com.pharmadesk.backend.pharmacy.repository.PrescriptionRepository prescriptionRepository) {
+                       com.pharmadesk.backend.pharmacy.repository.PrescriptionRepository prescriptionRepository,
+                       com.pharmadesk.backend.repository.DoctorRepository doctorRepository) {
         this.stockRepository = stockRepository;
         this.billRepository = billRepository;
         this.creditBillRepository = creditBillRepository;
@@ -58,6 +60,7 @@ public class SaleService {
         this.alertService = alertService;
         this.meterRegistry = meterRegistry;
         this.prescriptionRepository = prescriptionRepository;
+        this.doctorRepository = doctorRepository;
         
         Gauge.builder("pharmacy_stock_low_count", alertService, 
             svc -> svc.getLowStockCount())
@@ -82,6 +85,9 @@ public class SaleService {
             bill.setBillingDate(LocalDateTime.now());
             bill.setPatientName(request.getPatientName());
             bill.setDoctorName(request.getDoctorName());
+            if (request.getDoctorId() != null) {
+                bill.setDoctor(doctorRepository.findById(request.getDoctorId()).orElse(null));
+            }
             bill.setDiscountAmount(request.getDiscountAmount());
 
         BigDecimal subTotal = BigDecimal.ZERO;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import {
   Plus, Search, Truck, Trash2, Edit3, Eye, FileText, Star, TrendingUp,
@@ -13,6 +14,9 @@ import { useSupplierStore } from '../store/useSupplierStore';
 import GRNEntry from './GRNEntry';
 import InvoiceMatching from './InvoiceMatching';
 import SupplierReturns from './SupplierReturns';
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import pharmacyService from '../utils/pharmacyService';
 
 // ── Status helpers ──────────────────────────────────────────────
 const statusConfig = {
@@ -449,27 +453,43 @@ function SupplierProfile({ supplier, onClose, onEdit, onCreatePO }) {
 
 // ══════════════════════════════════════════════════════════════
 // MAIN SUPPLIERS PAGE
-// ══════════════════════════════════════════════════════════════
+
 export default function Suppliers() {
-  const {
-    suppliers,
-    loading,
-    searchTerm,
-    setSearch,
-    fetchSuppliers,
-    createSupplier,
-    updateSupplier,
-    deleteSupplier
-  } = useSupplierStore(useShallow(state => ({
-    suppliers: state.suppliers,
-    loading: state.loading,
-    searchTerm: state.searchTerm,
-    setSearch: state.setSearch,
-    fetchSuppliers: state.fetchSuppliers,
-    createSupplier: state.createSupplier,
-    updateSupplier: state.updateSupplier,
-    deleteSupplier: state.deleteSupplier
-  })));
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+
+  const { items: suppliers = [], isLoading: loading } = usePageData(
+    'suppliers',
+    '/pharmacy/suppliers'
+  );
+
+  const createSupplierMutation = useMutation({
+    mutationFn: (data) => pharmacyService.createSupplier(data),
+    onSuccess: () => {
+      toast.success('Supplier created successfully');
+      queryClient.invalidateQueries(['suppliers']);
+    },
+    onError: () => toast.error('Failed to create supplier')
+  });
+
+  const updateSupplierMutation = useMutation({
+    mutationFn: ({id, data}) => pharmacyService.updateSupplier(id, data),
+    onSuccess: () => {
+      toast.success('Supplier updated successfully');
+      queryClient.invalidateQueries(['suppliers']);
+    },
+    onError: () => toast.error('Failed to update supplier')
+  });
+
+  const deleteSupplierMutation = useMutation({
+    mutationFn: (id) => pharmacyService.deleteSupplier(id),
+    onSuccess: () => {
+      toast.success('Supplier deleted successfully');
+      queryClient.invalidateQueries(['suppliers']);
+    },
+    onError: () => toast.error('Failed to delete supplier')
+  });
 
   const [view, setView] = useState('list'); // list | grn | invoice | returns
   const [filterType, setFilterType] = useState('');
@@ -479,19 +499,25 @@ export default function Suppliers() {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [profileSupplier, setProfileSupplier] = useState(null);
 
-  useEffect(() => { fetchSuppliers(); }, [fetchSuppliers]);
-
   const handleSave = async (form) => {
     if (!form.name?.trim()) { toast.error('Supplier name is required'); return; }
-    const ok = isEditMode
-      ? await updateSupplier(selectedSupplier.id, form)
-      : await createSupplier(form);
-    if (ok) setIsModalOpen(false);
+    
+    if (isEditMode) {
+      updateSupplierMutation.mutate(
+        { id: selectedSupplier.id, data: form },
+        { onSuccess: () => setIsModalOpen(false) }
+      );
+    } else {
+      createSupplierMutation.mutate(
+        form,
+        { onSuccess: () => setIsModalOpen(false) }
+      );
+    }
   };
 
   const handleDelete = async (id) => {
     if (!window.confirm('Delete this supplier?')) return;
-    await deleteSupplier(id);
+    deleteSupplierMutation.mutate(id);
   };
 
   const openAdd = () => { setIsEditMode(false); setSelectedSupplier(null); setIsModalOpen(true); };
@@ -500,10 +526,10 @@ export default function Suppliers() {
   const filtered = useMemo(() => {
     const list = suppliers || [];
     return list.filter(s => {
-      const matchSearch = !searchTerm || 
-        (s.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (s.supplierCode?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (s.gstin?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+      const matchSearch = !debouncedSearch || 
+        (s.name?.toLowerCase() || '').includes(debouncedSearch.toLowerCase()) ||
+        (s.supplierCode?.toLowerCase() || '').includes(debouncedSearch.toLowerCase()) ||
+        (s.gstin?.toLowerCase() || '').includes(debouncedSearch.toLowerCase());
       const matchType = !filterType || s.supplierType === filterType;
       const matchStatus = !filterStatus || s.status === filterStatus;
       return matchSearch && matchType && matchStatus;

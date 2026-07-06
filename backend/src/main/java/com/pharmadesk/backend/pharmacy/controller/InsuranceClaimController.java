@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.InsuranceClaim;
 import com.pharmadesk.backend.model.InsuranceProvider;
@@ -40,7 +41,7 @@ public class InsuranceClaimController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_BILLING_STAFF','ROLE_CASHIER')")
-    public ResponseEntity<ApiResponse<InsuranceClaim>> create(@RequestBody InsuranceClaim claim) {
+    public ResponseEntity<ApiResponse<InsuranceClaim>> create(@Valid @RequestBody InsuranceClaim claim) {
         return ResponseEntity.ok(ApiResponse.success(service.createClaim(claim), "Claim draft created successfully"));
     }
 
@@ -62,7 +63,7 @@ public class InsuranceClaimController {
 
     @PostMapping("/providers")
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_SUPERVISOR')")
-    public ResponseEntity<ApiResponse<InsuranceProvider>> createProvider(@RequestBody InsuranceProvider provider) {
+    public ResponseEntity<ApiResponse<InsuranceProvider>> createProvider(@Valid @RequestBody InsuranceProvider provider) {
         return ResponseEntity.ok(ApiResponse.success(service.createProvider(provider), "Insurance provider configured"));
     }
 }

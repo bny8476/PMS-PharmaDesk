@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Eye, CheckCircle, XCircle, Plus, Send, Search, Trash2, PlusCircle } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -21,7 +22,6 @@ export default function PendingIndentPrescriptions() {
 
   useEffect(() => {
     // Re-fetch logic would go here if not using mocks
-    console.log('Refreshing Indents for route:', location.key);
   }, [location.key]);
 
   const [isFulfillModalOpen, setIsFulfillModalOpen] = useState(false);
@@ -33,7 +33,11 @@ export default function PendingIndentPrescriptions() {
   
   // Search state
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // New Indent form state
   const [targetDept, setTargetDept] = useState('General Ward');
@@ -99,8 +103,8 @@ export default function PendingIndentPrescriptions() {
   };
 
   const filteredIndents = indents.filter(ind => {
-    const s = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
+    const s = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
       ind.indentNo.toLowerCase().includes(s) ||
       ind.dept.toLowerCase().includes(s) ||
       ind.requestedBy.toLowerCase().includes(s);
@@ -159,7 +163,7 @@ export default function PendingIndentPrescriptions() {
         <p className="text-sm text-gray-500 font-medium">Process bulk department indents and internal pharmacy requests</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -168,8 +172,8 @@ export default function PendingIndentPrescriptions() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredIndents} hover striped />
-        <Pagination totalRecords={filteredIndents.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        <DataTable columns={columns} data={pageSize === 'All' ? filteredIndents : filteredIndents.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+        <Pagination totalRecords={filteredIndents.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
 
       {/* Fulfill Modal */}
@@ -185,7 +189,7 @@ export default function PendingIndentPrescriptions() {
                 setIndents(indents.map(i => i.id === selectedIndent.id ? { ...i, status: 'Fulfilled' } : i));
                 toast.success('Indent items issued successfully!'); 
                 setIsFulfillModalOpen(false); 
-             }} className="flex-1 px-8 py-2.5 bg-success text-white rounded-xl text-sm font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all flex items-center justify-center gap-2 font-display">
+             }} className="flex-1 px-8 py-2.5 bg-green-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all flex items-center justify-center gap-2 font-display">
                 <CheckCircle className="w-4 h-4"/> Confirm Issue
              </button>
           </div>
@@ -204,22 +208,15 @@ export default function PendingIndentPrescriptions() {
                </div>
             </div>
             <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-               <table className="w-full text-sm">
-                 <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                   <tr>
-                     <th className="px-4 py-3 text-left">Medicine</th>
-                     <th className="px-4 py-3 text-center">Required</th>
-                     <th className="px-4 py-3 text-center w-32">Issue Qty</th>
-                   </tr>
-                 </thead>
-                 <tbody className="divide-y divide-gray-100 bg-white">
-                    <tr className="hover:bg-slate-50">
-                      <td className="px-4 py-4 font-bold text-slate-700">Amoxicillin 500mg</td>
-                      <td className="px-4 py-4 text-center font-bold">100</td>
-                      <td className="px-4 py-4"><input type="number" defaultValue="100" className="w-full text-center border rounded-lg py-1 outline-none focus:border-success font-bold text-success" /></td>
-                    </tr>
-                 </tbody>
-               </table>
+               <DataTable 
+                 columns={[
+                   { header: 'Medicine', render: () => <div className="font-bold text-slate-700">Amoxicillin 500mg</div> },
+                   { header: <div className="text-center">Required</div>, render: () => <div className="text-center font-bold">100</div> },
+                   { header: <div className="text-center w-32">Issue Qty</div>, render: () => <input type="number" defaultValue="100" className="w-full text-center border rounded-lg py-1 outline-none focus:border-success font-bold text-success" /> }
+                 ]}
+                 data={[{ id: 1 }]}
+                 hover
+               />
             </div>
           </div>
         )}
@@ -270,58 +267,63 @@ export default function PendingIndentPrescriptions() {
           <div className="space-y-3">
              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">Medicine Requirements</label>
              <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                <table className="w-full text-sm">
-                   <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                     <tr>
-                       <th className="px-4 py-3 text-left">Medicine Name</th>
-                       <th className="px-4 py-3 text-center w-32">Req. Quantity</th>
-                       <th className="px-4 py-3 text-center w-12"></th>
-                     </tr>
-                   </thead>
-                   <tbody className="divide-y divide-gray-50 bg-white">
-                     {indentItems.map((item, idx) => (
-                       <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                         <td className="px-4 py-4 relative">
-                           <input 
-                            type="text" 
-                            value={item.name}
-                            onChange={(e) => {
-                               const val = e.target.value;
-                               const ni = [...indentItems];
-                               ni[idx].name = val;
-                               setIndentItems(ni);
-                               handleStockSearch(val, idx);
-                            }}
-                            placeholder="Search medicine..." 
-                            className="w-full bg-transparent outline-none font-bold placeholder:font-normal placeholder:text-slate-300" 
-                           />
-                           {activeSearchIdx === idx && item.name.length >= 2 && searchResults.length > 0 && (
-                             <div className="absolute z-50 left-0 top-full mt-1 w-full bg-white shadow-2xl border border-blue-100 rounded-xl overflow-hidden">
-                               {searchResults.map(s => (
-                                 <div key={s.id} onClick={() => selectMedicine(s, idx)} className="px-4 py-3 hover:bg-blue-600 hover:text-white cursor-pointer font-bold border-b last:border-0 transition-colors">{s.medicine?.name}</div>
-                               ))}
-                             </div>
-                           )}
-                         </td>
-                         <td className="px-4 py-4">
-                           <input 
-                            type="number" 
-                            value={item.qty}
-                            onChange={(e) => {
+                <DataTable 
+                  columns={[
+                    {
+                      header: 'Medicine Name',
+                      render: (item, idx) => (
+                        <div className="relative">
+                          <input 
+                           type="text" 
+                           value={item.name}
+                           onChange={(e) => {
+                              const val = e.target.value;
                               const ni = [...indentItems];
-                              ni[idx].qty = parseInt(e.target.value) || 0;
+                              ni[idx].name = val;
                               setIndentItems(ni);
-                            }}
-                            className="w-20 mx-auto block text-center border rounded-lg py-1 outline-none focus:border-primary font-bold" 
-                           />
-                         </td>
-                         <td className="px-4 py-4 text-center">
-                           <button onClick={() => setIndentItems(indentItems.filter(i => i.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                         </td>
-                       </tr>
-                     ))}
-                   </tbody>
-                </table>
+                              handleStockSearch(val, idx);
+                           }}
+                           placeholder="Search medicine..." 
+                           className="w-full bg-transparent outline-none font-bold placeholder:font-normal placeholder:text-slate-300" 
+                          />
+                          {activeSearchIdx === idx && item.name.length >= 2 && searchResults.length > 0 && (
+                            <div className="absolute z-50 left-0 top-full mt-1 w-full bg-white shadow-2xl border border-blue-100 rounded-xl overflow-hidden">
+                              {searchResults.map(s => (
+                                <div key={s.id} onClick={() => selectMedicine(s, idx)} className="px-4 py-3 hover:bg-blue-600 hover:text-white cursor-pointer font-bold border-b last:border-0 transition-colors">{s.medicine?.name}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    },
+                    {
+                      header: <div className="text-center w-32">Req. Quantity</div>,
+                      render: (item, idx) => (
+                        <input 
+                         type="number" 
+                         value={item.qty}
+                         onChange={(e) => {
+                           const ni = [...indentItems];
+                           ni[idx].qty = parseInt(e.target.value) || 0;
+                           setIndentItems(ni);
+                         }}
+                         className="w-20 mx-auto block text-center border rounded-lg py-1 outline-none focus:border-primary font-bold" 
+                        />
+                      )
+                    },
+                    {
+                      header: <div className="text-center w-12"></div>,
+                      render: (item) => (
+                        <div className="text-center">
+                          <button onClick={() => setIndentItems(indentItems.filter(i => i.id !== item.id))} className="text-slate-300 hover:text-red-500 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      )
+                    }
+                  ]}
+                  data={indentItems}
+                  hover
+                />
+
                 <button onClick={addRow} className="w-full py-3 bg-slate-50 text-sky-600 text-[10px] font-black uppercase tracking-widest hover:bg-slate-100 border-t border-slate-100 border-dashed transition-all">+ Add Row</button>
              </div>
           </div>

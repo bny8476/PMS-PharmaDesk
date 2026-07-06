@@ -3,25 +3,13 @@ import { useShallow } from 'zustand/react/shallow';
 import { Thermometer, RefreshCw, AlertTriangle, CheckCircle, Plus, Sparkles, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { useTemperatureStore } from '../store/useTemperatureStore';
+import AppModal from '../components/ui/AppModal';
+
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import pharmacyService from '../utils/pharmacyService';
 
 export default function TemperatureLogs() {
-  const {
-    units,
-    breaches,
-    loading,
-    fetchAll,
-    createUnit,
-    recordTemperature,
-    resolveBreach
-  } = useTemperatureStore(useShallow(state => ({
-    units: state.units,
-    breaches: state.breaches,
-    loading: state.loading,
-    fetchAll: state.fetchAll,
-    createUnit: state.createUnit,
-    recordTemperature: state.recordTemperature,
-    resolveBreach: state.resolveBreach
-  })));
+  const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
 
   // New storage unit modal state
@@ -37,71 +25,127 @@ export default function TemperatureLogs() {
   const [correctiveActionLogId, setCorrectiveActionLogId] = useState(null);
   const [correctiveActionText, setCorrectiveActionText] = useState('');
 
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+  // Queries
+  const { data: units = [], isLoading: loadingUnits } = useQuery({
+    queryKey: ['storageUnits'],
+    queryFn: async () => {
+      const res = await pharmacyService.getStorageUnits();
+      return res.data || [];
+    }
+  });
 
-  const handleCreateUnit = async (e) => {
+  const { data: breaches = [], isLoading: loadingBreaches } = useQuery({
+    queryKey: ['temperatureBreaches'],
+    queryFn: async () => {
+      const res = await pharmacyService.getTemperatureBreaches();
+      return res.data || [];
+    }
+  });
+
+  const loading = loadingUnits || loadingBreaches;
+
+  const createUnitMutation = useMutation({
+    mutationFn: (payload) => pharmacyService.createStorageUnit(payload),
+    onSuccess: () => {
+      toast.success('Storage unit created successfully');
+      queryClient.invalidateQueries(['storageUnits']);
+    },
+    onError: () => toast.error('Failed to create storage unit')
+  });
+
+  const recordTempMutation = useMutation({
+    mutationFn: (payload) => pharmacyService.recordTemperature(payload),
+    onSuccess: (res) => {
+      toast.success('Temperature recorded successfully');
+      if (res && res.isBreach) {
+        toast.error('WARNING: Thermal breach detected!', { duration: 5000 });
+        queryClient.invalidateQueries(['temperatureBreaches']);
+      }
+    },
+    onError: () => toast.error('Failed to record temperature')
+  });
+
+  const resolveBreachMutation = useMutation({
+    mutationFn: ({ logId, action }) => pharmacyService.resolveBreachAction(logId, action),
+    onSuccess: () => {
+      toast.success('Corrective action logged');
+      queryClient.invalidateQueries(['temperatureBreaches']);
+    },
+    onError: () => toast.error('Failed to log corrective action')
+  });
+
+  const fetchAll = () => {
+    queryClient.invalidateQueries(['storageUnits']);
+    queryClient.invalidateQueries(['temperatureBreaches']);
+  };
+
+  const handleCreateUnit = (e) => {
     e.preventDefault();
     if (!newUnit.name || !newUnit.minTemperature || !newUnit.maxTemperature) {
       toast.error('Please fill required fields');
       return;
     }
-    setSubmitting(true);
-    const ok = await createUnit({
-      unitName: newUnit.name,
-      unitType: 'refrigerator',
-      location: newUnit.location,
-      minThreshold: parseFloat(newUnit.minTemperature),
-      maxThreshold: parseFloat(newUnit.maxTemperature)
-    });
-    setSubmitting(false);
-
-    if (ok) {
-      setShowUnitForm(false);
-      setNewUnit({ name: '', minTemperature: '', maxTemperature: '', location: '' });
-    }
+    
+    createUnitMutation.mutate(
+      {
+        unitName: newUnit.name,
+        unitType: 'refrigerator',
+        location: newUnit.location,
+        minThreshold: parseFloat(newUnit.minTemperature),
+        maxThreshold: parseFloat(newUnit.maxTemperature)
+      },
+      {
+        onSuccess: () => {
+          setShowUnitForm(false);
+          setNewUnit({ name: '', minTemperature: '', maxTemperature: '', location: '' });
+        }
+      }
+    );
   };
 
-  const handleRecordTemperature = async (e) => {
+  const handleRecordTemperature = (e) => {
     e.preventDefault();
     if (!selectedUnitId || !tempReading || !loggedBy) {
       toast.error('Please enter all required reading values');
       return;
     }
-    setSubmitting(true);
+    
     const selectedUnit = units.find(u => u.unitId === selectedUnitId);
-    const ok = await recordTemperature({
-      storageUnit: { unitId: selectedUnitId },
-      unitName: selectedUnit.unitName,
-      unitType: selectedUnit.unitType,
-      recordedTemperature: parseFloat(tempReading),
-      minThreshold: selectedUnit.minThreshold,
-      maxThreshold: selectedUnit.maxThreshold,
-      recordedBy: 1
-    });
-    setSubmitting(false);
-
-    if (ok) {
-      setTempReading('');
-      setSelectedUnitId('');
-    }
+    recordTempMutation.mutate(
+      {
+        storageUnit: { unitId: selectedUnitId },
+        unitName: selectedUnit.unitName,
+        unitType: selectedUnit.unitType,
+        recordedTemperature: parseFloat(tempReading),
+        minThreshold: selectedUnit.minThreshold,
+        maxThreshold: selectedUnit.maxThreshold,
+        recordedBy: 1
+      },
+      {
+        onSuccess: () => {
+          setTempReading('');
+          setSelectedUnitId('');
+        }
+      }
+    );
   };
 
-  const handleCorrectiveAction = async (e) => {
+  const handleCorrectiveAction = (e) => {
     e.preventDefault();
     if (!correctiveActionText) {
       toast.error('Please enter the actions taken');
       return;
     }
-    setSubmitting(true);
-    const ok = await resolveBreach(correctiveActionLogId, correctiveActionText);
-    setSubmitting(false);
-
-    if (ok) {
-      setCorrectiveActionLogId(null);
-      setCorrectiveActionText('');
-    }
+    
+    resolveBreachMutation.mutate(
+      { logId: correctiveActionLogId, action: correctiveActionText },
+      {
+        onSuccess: () => {
+          setCorrectiveActionLogId(null);
+          setCorrectiveActionText('');
+        }
+      }
+    );
   };
 
   return (
@@ -209,8 +253,8 @@ export default function TemperatureLogs() {
               </h3>
             </div>
             <div className="divide-y divide-slate-50 max-h-[300px] overflow-auto">
-              {breaches.map(b => (
-                <div key={b.logId || Math.random()} className="p-4 text-xs space-y-2 bg-red-50/10">
+              {breaches.map((b, index) => (
+                <div key={b.logId || index} className="p-4 text-xs space-y-2 bg-red-50/10">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-slate-800">{b.storageUnitName || `Unit #${b.storageUnitId}`}</span>
                     <span className="font-mono text-slate-400">{b.loggedAt}</span>
@@ -272,79 +316,84 @@ export default function TemperatureLogs() {
       </div>
 
       {/* Unit Form Modal */}
-      {showUnitForm && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-gray-200 w-full max-w-md p-6 relative rounded-xl shadow-2xl">
-            <div className="flex items-center gap-2 mb-4">
-              <Thermometer className="w-5 h-5 text-blue-500" />
-              <h3 className="text-base font-bold text-slate-800">Add Safe Storage Unit</h3>
-            </div>
-            <form onSubmit={handleCreateUnit} className="space-y-4">
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Storage Unit Name *</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Vaccine Refrigerator A"
-                  value={newUnit.name}
-                  onChange={e => setNewUnit({ ...newUnit, name: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
-                  required
-                />
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Physical Location</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Pharmacy Main Room Cabinet 3"
-                  value={newUnit.location}
-                  onChange={e => setNewUnit({ ...newUnit, location: e.target.value })}
-                  className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Min Temp Limit (°C) *</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={newUnit.minTemperature}
-                    onChange={e => setNewUnit({ ...newUnit, minTemperature: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Max Temp Limit (°C) *</label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    value={newUnit.maxTemperature}
-                    onChange={e => setNewUnit({ ...newUnit, maxTemperature: e.target.value })}
-                    className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
-                    required
-                  />
-                </div>
-              </div>
-              <div className="flex gap-3 justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUnitForm(false)}
-                  className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition-all"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm disabled:opacity-50"
-                >
-                  Save Storage Unit
-                </button>
-              </div>
-            </form>
+      <AppModal
+        isOpen={showUnitForm}
+        onClose={() => setShowUnitForm(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <Thermometer className="w-5 h-5 text-blue-500" />
+            <span className="text-base font-bold text-slate-800">Add Safe Storage Unit</span>
           </div>
-        </div>
-      )}
+        }
+        maxWidth="sm:max-w-md"
+        footer={
+          <div className="flex gap-3 justify-end w-full">
+            <button
+              type="button"
+              onClick={() => setShowUnitForm(false)}
+              className="px-4 py-2 border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCreateUnit}
+              disabled={submitting}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-all shadow-sm disabled:opacity-50"
+            >
+              Save Storage Unit
+            </button>
+          </div>
+        }
+      >
+        <form onSubmit={handleCreateUnit} className="space-y-4">
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Storage Unit Name *</label>
+            <input
+              type="text"
+              placeholder="e.g. Vaccine Refrigerator A"
+              value={newUnit.name}
+              onChange={e => setNewUnit({ ...newUnit, name: e.target.value })}
+              className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
+              required
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Physical Location</label>
+            <input
+              type="text"
+              placeholder="e.g. Pharmacy Main Room Cabinet 3"
+              value={newUnit.location}
+              onChange={e => setNewUnit({ ...newUnit, location: e.target.value })}
+              className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Min Temp Limit (°C) *</label>
+              <input
+                type="number"
+                step="0.5"
+                value={newUnit.minTemperature}
+                onChange={e => setNewUnit({ ...newUnit, minTemperature: e.target.value })}
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
+                required
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Max Temp Limit (°C) *</label>
+              <input
+                type="number"
+                step="0.5"
+                value={newUnit.maxTemperature}
+                onChange={e => setNewUnit({ ...newUnit, maxTemperature: e.target.value })}
+                className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-blue-500/20 bg-white"
+                required
+              />
+            </div>
+          </div>
+        </form>
+      </AppModal>
     </div>
   );
 }

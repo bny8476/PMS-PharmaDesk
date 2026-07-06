@@ -1,69 +1,68 @@
 package com.pharmadesk.backend.controller;
 
-import com.pharmadesk.backend.model.Role;
-import com.pharmadesk.backend.model.User;
-import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
-import com.pharmadesk.backend.repository.RoleRepository;
-import com.pharmadesk.backend.repository.UserRepository;
-import com.pharmadesk.backend.security.JwtUtils;
-import com.pharmadesk.backend.dto.LoginRequest;
 import com.pharmadesk.backend.dto.CreateUserRequest;
 import com.pharmadesk.backend.dto.UserRequestDto;
 import com.pharmadesk.backend.dto.UserResponseDTO;
-import org.springframework.http.ResponseEntity;
+import com.pharmadesk.backend.model.User;
+import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
+import com.pharmadesk.backend.security.CustomUserDetails;
+import com.pharmadesk.backend.security.JwtUtils;
+import com.pharmadesk.backend.dto.LoginRequest;
+import com.pharmadesk.backend.repository.UserRepository;
+import com.pharmadesk.backend.service.UserService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.GrantedAuthority;
-import com.pharmadesk.backend.security.CustomUserDetails;
-import java.util.concurrent.CompletableFuture;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.data.redis.core.RedisTemplate;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.Cookie;
 import jakarta.validation.Valid;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.Principal;
-import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+/**
+ * Handles authentication (login, logout, token refresh, OTP, password changes)
+ * and user management CRUD. Business logic is delegated to {@link UserService}.
+ */
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
 
     private final AuthenticationManager authenticationManager;
     private final JwtUtils jwtUtils;
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
-
+    private final UserService userService;
+    private final UserRepository userRepository; // used only for JWT token lookups
     private final com.pharmadesk.backend.service.OtpService otpService;
     private final RedisTemplate<String, Object> redisTemplate;
 
-    public AuthController(AuthenticationManager authenticationManager, 
-                          JwtUtils jwtUtils, 
-                          UserRepository userRepository, 
-                          RoleRepository roleRepository, 
-                          PasswordEncoder passwordEncoder,
+    public AuthController(AuthenticationManager authenticationManager,
+                          JwtUtils jwtUtils,
+                          UserService userService,
+                          UserRepository userRepository,
                           com.pharmadesk.backend.service.OtpService otpService,
                           RedisTemplate<String, Object> redisTemplate) {
         this.authenticationManager = authenticationManager;
-        this.jwtUtils = jwtUtils;
-        this.userRepository = userRepository;
-        this.roleRepository = roleRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.otpService = otpService;
-        this.redisTemplate = redisTemplate;
+        this.jwtUtils              = jwtUtils;
+        this.userService           = userService;
+        this.userRepository        = userRepository;
+        this.otpService            = otpService;
+        this.redisTemplate         = redisTemplate;
     }
+
+    // ── OTP ───────────────────────────────────────────────────────────────────
 
     @PostMapping("/otp/send")
     public ResponseEntity<ApiResponse<Void>> sendOtp(@RequestBody Map<String, String> request) {
@@ -78,51 +77,40 @@ public class AuthController {
     @PostMapping("/otp/verify")
     public ResponseEntity<ApiResponse<Void>> verifyOtp(@RequestBody Map<String, String> request) {
         String email = request.get("email");
-        String code = request.get("code");
+        String code  = request.get("code");
         if (email == null || code == null) {
             return ResponseEntity.badRequest().body(ApiResponse.error("Email and code are required"));
         }
         boolean verified = otpService.verifyOtp(email, code);
-        if (verified) {
-            return ResponseEntity.ok(ApiResponse.success(null, "OTP verified successfully"));
-        } else {
-            return ResponseEntity.status(401).body(ApiResponse.error("Invalid or expired OTP code"));
-        }
+        return verified
+                ? ResponseEntity.ok(ApiResponse.success(null, "OTP verified successfully"))
+                : ResponseEntity.status(401).body(ApiResponse.error("Invalid or expired OTP code"));
     }
 
+    // ── Login / Logout / Refresh ───────────────────────────────────────────────
+
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> authenticateUser(@Valid @RequestBody LoginRequest loginRequest, HttpServletResponse response) {
+    public ResponseEntity<ApiResponse<Map<String, Object>>> authenticateUser(
+            @Valid @RequestBody LoginRequest loginRequest,
+            HttpServletResponse response) {
         try {
             Authentication authentication = authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(loginRequest.getUsername(), loginRequest.getPassword()));
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getUsername(), loginRequest.getPassword()));
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             String jwt = jwtUtils.generateJwtToken(authentication);
-
-            ResponseCookie cookie = ResponseCookie.from("jwt", jwt)
-                    .httpOnly(true)
-                    .secure(true)
-                    .sameSite("Strict")
-                    .maxAge(3600)
-                    .path("/")
-                    .build();
-            response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
+            setJwtCookie(response, jwt, 3600);
 
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             User user = userDetails.getUser();
 
-            CompletableFuture.runAsync(() -> {
-                try {
-                    userRepository.updateLastLogin(user.getId(), LocalDateTime.now());
-                } catch (Exception e) {
-                    // Log error if async update fails
-                    e.printStackTrace();
-                }
-            });
+            // Update last-login asynchronously — no need to block the response
+            CompletableFuture.runAsync(() -> userService.recordLastLogin(user.getId()));
 
             List<String> roleNames = authentication.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority)
-                    .map(role -> role.replace("ROLE_", ""))
+                    .map(r -> r.replace("ROLE_", ""))
                     .collect(Collectors.toList());
 
             Map<String, Object> data = new HashMap<>();
@@ -150,28 +138,134 @@ public class AuthController {
             if (Boolean.TRUE.equals(redisTemplate.hasKey("jwt_blacklist:" + jti))) {
                 return ResponseEntity.status(401).body(ApiResponse.error("Token has been revoked"));
             }
-            
             String username = jwtUtils.getUserNameFromJwtToken(token);
-            User user = userRepository.findByUsername(username).orElse(null);
-            if (user != null) {
-                // Generate new token
-                Authentication authentication = new UsernamePasswordAuthenticationToken(
+            userRepository.findByUsername(username).ifPresent(user -> {
+                Authentication auth = new UsernamePasswordAuthenticationToken(
                         user, null, jwtUtils.getAuthoritiesFromJwtToken(token));
-                String newJwt = jwtUtils.generateJwtToken(authentication);
-                
-                ResponseCookie cookie = ResponseCookie.from("jwt", newJwt)
-                        .httpOnly(true)
-                        .secure(true)
-                        .sameSite("Strict")
-                        .maxAge(3600)
-                        .path("/")
-                        .build();
-                response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-                return ResponseEntity.ok(ApiResponse.success(null, "Token refreshed"));
-            }
+                String newJwt = jwtUtils.generateJwtToken(auth);
+                setJwtCookie(response, newJwt, 3600);
+            });
+            return ResponseEntity.ok(ApiResponse.success(null, "Token refreshed"));
         }
         return ResponseEntity.status(401).body(ApiResponse.error("Invalid or expired token"));
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<ApiResponse<Void>> logoutUser(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            Principal principal) {
+        String token = getJwtFromCookies(request);
+        if (token != null && jwtUtils.validateJwtToken(token)) {
+            String jti  = jwtUtils.getJtiFromJwtToken(token);
+            Date expiry = jwtUtils.getExpirationFromJwtToken(token);
+            long ttl    = expiry.getTime() - System.currentTimeMillis();
+            if (ttl > 0) {
+                redisTemplate.opsForValue().set("jwt_blacklist:" + jti, "true", ttl, TimeUnit.MILLISECONDS);
+            }
+        }
+        setJwtCookie(response, "", 0);
+        if (principal != null) {
+            userService.recordLastLogout(principal.getName());
+        }
+        return ResponseEntity.ok(ApiResponse.success(null, "Logged out"));
+    }
+
+    // ── User CRUD (admin) ──────────────────────────────────────────────────────
+
+    @GetMapping("/users")
+    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
+    public ResponseEntity<ApiResponse<List<UserResponseDTO>>> getAllUsers() {
+        return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers(), "Users fetched"));
+    }
+
+    @PostMapping("/users")
+    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
+    @Transactional
+    public ResponseEntity<ApiResponse<UserResponseDTO>> createUser(@Valid @RequestBody CreateUserRequest dto) {
+        try {
+            UserResponseDTO created = userService.createUser(dto);
+            return ResponseEntity.ok(ApiResponse.success(created, "Staff created"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/users/{id}/profile")
+    public ResponseEntity<ApiResponse<UserResponseDTO>> updateProfile(
+            @PathVariable Long id,
+            @RequestBody Map<String, String> req,
+            Principal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error("Not authenticated"));
+        }
+        // Authorisation: users may only update their own profile
+        userRepository.findById(id).ifPresent(u -> {
+            if (!u.getUsername().equals(principal.getName())) {
+                throw new RuntimeException("Access denied");
+            }
+        });
+        try {
+            UserResponseDTO updated = userService.updateProfile(
+                    id,
+                    req.get("name"),
+                    req.get("email"),
+                    req.get("phone"),
+                    req.getOrDefault("branch", req.get("location")),
+                    req.get("shift"));
+            return ResponseEntity.ok(ApiResponse.success(updated, "Profile updated successfully"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(403).body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    @PutMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
+    public ResponseEntity<ApiResponse<UserResponseDTO>> updateUser(
+            @PathVariable Long id,
+            @RequestBody UserRequestDto dto) {
+        UserResponseDTO updated = userService.updateUser(id, dto);
+        return ResponseEntity.ok(ApiResponse.success(updated, "Staff updated"));
+    }
+
+    @PutMapping("/users/{id}/status")
+    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
+    public ResponseEntity<ApiResponse<UserResponseDTO>> toggleUserStatus(@PathVariable Long id) {
+        UserResponseDTO updated = userService.toggleStatus(id);
+        String msg = "ACTIVE".equals(updated.status) ? "activated" : "suspended";
+        return ResponseEntity.ok(ApiResponse.success(updated, "User " + msg + " successfully"));
+    }
+
+    @PostMapping("/users/{id}/reset-password")
+    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, String>>> resetUserPassword(@PathVariable Long id) {
+        Map<String, String> result = userService.resetPassword(id);
+        return ResponseEntity.ok(ApiResponse.success(result, "Password reset successfully"));
+    }
+
+    @DeleteMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
+    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable Long id) {
+        userService.deleteUser(id);
+        return ResponseEntity.ok(ApiResponse.success(null, "Staff deleted"));
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            @RequestBody Map<String, String> request,
+            Principal principal) {
+        if (principal == null) {
+            return ResponseEntity.status(401).body(ApiResponse.error("Not authenticated"));
+        }
+        try {
+            userService.changePassword(principal.getName(), request.get("newPassword"));
+            return ResponseEntity.ok(ApiResponse.success(null, "Password changed successfully"));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private String getJwtFromCookies(HttpServletRequest request) {
         if (request.getCookies() != null) {
@@ -184,208 +278,14 @@ public class AuthController {
         return null;
     }
 
-    @GetMapping("/users")
-    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponse<List<UserResponseDTO>>> getAllUsers() {
-        List<UserResponseDTO> dtos = userRepository.findAll()
-                .stream()
-                .map(UserResponseDTO::from)
-                .collect(Collectors.toList());
-        return ResponseEntity.ok(ApiResponse.success(dtos, "Users fetched"));
-    }
-
-    @PostMapping("/users")
-    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    @Transactional
-    public ResponseEntity<ApiResponse<UserResponseDTO>> createUser(@Valid @RequestBody CreateUserRequest userDto) {
-        if (userRepository.findByUsername(userDto.getUsername()).isPresent()) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Username already exists"));
-        }
-
-        User user = new User();
-        user.setUsername(userDto.getUsername());
-        user.setPasswordHash(passwordEncoder.encode(userDto.getPassword()));
-        user.setName(userDto.getName());
-        user.setEmail(userDto.getEmail());
-        user.setPhone(userDto.getPhone());
-        user.setBranch(userDto.getBranch());
-        user.setShift(userDto.getShift());
-        user.setStatus("ACTIVE");
-        user.setMustChangePassword(true); // Force password change on first login
-
-        if (userDto.getRoles() != null && !userDto.getRoles().isEmpty()) {
-            Set<Role> roles = userDto.getRoles().stream()
-                    .map(name -> roleRepository.findByName(name)
-                            .orElseThrow(() -> new RuntimeException(
-                                    "Role not found: " + name + ". Valid roles: " +
-                                    roleRepository.findAll().stream()
-                                            .map(Role::getName)
-                                            .collect(Collectors.joining(", "))
-                            )))
-                    .collect(Collectors.toSet());
-            user.setRoles(roles);
-        }
-
-        User savedFirst = userRepository.save(user);
-        return ResponseEntity.ok(ApiResponse.success(UserResponseDTO.from(savedFirst), "Staff created"));
-    }
-
-    @PutMapping("/users/{id}/profile")
-    public ResponseEntity<ApiResponse<UserResponseDTO>> updateProfile(@PathVariable Long id, @RequestBody Map<String, String> request, Principal principal) {
-        if (principal == null) {
-            return ResponseEntity.status(401).body(ApiResponse.error("Not authenticated"));
-        }
-
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        if (!user.getUsername().equals(principal.getName())) {
-            return ResponseEntity.status(403).body(ApiResponse.error("Access denied: You can only update your own profile"));
-        }
-
-        if (request.containsKey("name")) user.setName(request.get("name"));
-        if (request.containsKey("email")) user.setEmail(request.get("email"));
-        if (request.containsKey("phone")) user.setPhone(request.get("phone"));
-        if (request.containsKey("branch")) user.setBranch(request.get("branch"));
-        if (request.containsKey("location")) user.setBranch(request.get("location"));
-        if (request.containsKey("shift")) user.setShift(request.get("shift"));
-
-        User savedUser = userRepository.save(user);
-        return ResponseEntity.ok(ApiResponse.success(UserResponseDTO.from(savedUser), "Profile updated successfully"));
-    }
-
-    @PutMapping("/users/{id}")
-    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponse<UserResponseDTO>> updateUser(@PathVariable Long id, @RequestBody UserRequestDto userDto) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        user.setName(userDto.getName());
-        user.setEmail(userDto.getEmail());
-        user.setPhone(userDto.getPhone());
-        user.setBranch(userDto.getBranch());
-        user.setShift(userDto.getShift());
-        user.setStatus(userDto.getStatus());
-
-        if (userDto.getPassword() != null && !userDto.getPassword().isEmpty()) {
-            user.setPasswordHash(passwordEncoder.encode(userDto.getPassword()));
-        }
-
-        if (userDto.getRoles() != null && !userDto.getRoles().isEmpty()) {
-            Set<Role> roles = userDto.getRoles().stream()
-                    .filter(name -> name != null && !name.isBlank())
-                    .map(name -> roleRepository.findByName(name)
-                            .orElseThrow(() -> new RuntimeException(
-                                    "Role not found: " + name + ". Valid roles: " +
-                                    roleRepository.findAll().stream()
-                                            .map(Role::getName)
-                                            .collect(Collectors.joining(", "))
-                            )))
-                    .collect(Collectors.toSet());
-            if (!roles.isEmpty()) {
-                user.setRoles(roles);
-            }
-        }
-
-        User savedUser = userRepository.save(user);
-        return ResponseEntity.ok(ApiResponse.success(UserResponseDTO.from(savedUser), "Staff updated"));
-    }
-
-    @PutMapping("/users/{id}/status")
-    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponse<UserResponseDTO>> toggleUserStatus(@PathVariable Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        String newStatus = "ACTIVE".equals(user.getStatus()) ? "SUSPENDED" : "ACTIVE";
-        user.setStatus(newStatus);
-        User savedUser = userRepository.save(user);
-        return ResponseEntity.ok(ApiResponse.success(UserResponseDTO.from(savedUser),
-                "User " + (newStatus.equals("ACTIVE") ? "activated" : "suspended") + " successfully"));
-    }
-
-    @PostMapping("/users/{id}/reset-password")
-    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponse<Map<String, String>>> resetUserPassword(@PathVariable Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        // Generate a secure temporary password
-        String chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-        StringBuilder tempPassword = new StringBuilder();
-        Random random = new Random();
-        for (int i = 0; i < 8; i++) {
-            tempPassword.append(chars.charAt(random.nextInt(chars.length())));
-        }
-        String rawPassword = "Ph@" + tempPassword;
-
-        user.setPasswordHash(passwordEncoder.encode(rawPassword));
-        user.setMustChangePassword(true); // Force password change on next login
-        userRepository.save(user);
-
-        Map<String, String> result = new HashMap<>();
-        result.put("username", user.getUsername());
-        result.put("temporaryPassword", rawPassword);
-        result.put("name", user.getName());
-        return ResponseEntity.ok(ApiResponse.success(result, "Password reset successfully"));
-    }
-
-    @DeleteMapping("/users/{id}")
-    @PreAuthorize("hasAuthority('ROLE_SYSTEM_ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable Long id) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        user.setDeleted(true);
-        userRepository.save(user);
-        return ResponseEntity.ok(ApiResponse.success(null, "Staff deleted"));
-    }
-
-    @PostMapping("/logout")
-    public ResponseEntity<ApiResponse<Void>> logoutUser(HttpServletRequest request, HttpServletResponse response, Principal principal) {
-        String token = getJwtFromCookies(request);
-        if (token != null && jwtUtils.validateJwtToken(token)) {
-            String jti = jwtUtils.getJtiFromJwtToken(token);
-            Date expiration = jwtUtils.getExpirationFromJwtToken(token);
-            long ttl = expiration.getTime() - System.currentTimeMillis();
-            if (ttl > 0) {
-                redisTemplate.opsForValue().set("jwt_blacklist:" + jti, "true", ttl, TimeUnit.MILLISECONDS);
-            }
-        }
-        
-        ResponseCookie cookie = ResponseCookie.from("jwt", "")
+    private void setJwtCookie(HttpServletResponse response, String value, long maxAgeSecs) {
+        ResponseCookie cookie = ResponseCookie.from("jwt", value)
                 .httpOnly(true)
                 .secure(true)
                 .sameSite("Strict")
-                .maxAge(0)
+                .maxAge(maxAgeSecs)
                 .path("/")
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
-
-        if (principal != null) {
-            userRepository.findByUsername(principal.getName()).ifPresent(user -> {
-                user.setLastLogout(LocalDateTime.now());
-                userRepository.save(user);
-            });
-        }
-        return ResponseEntity.ok(ApiResponse.success(null, "Logged out"));
-    }
-
-    @PostMapping("/change-password")
-    public ResponseEntity<ApiResponse<Void>> changePassword(
-            @RequestBody Map<String, String> request,
-            Principal principal) {
-        if (principal == null) {
-            return ResponseEntity.status(401).body(ApiResponse.error("Not authenticated"));
-        }
-        String newPassword = request.get("newPassword");
-        if (newPassword == null || newPassword.length() < 6) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("Password must be at least 6 characters"));
-        }
-        User user = userRepository.findByUsername(principal.getName())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-        user.setPasswordHash(passwordEncoder.encode(newPassword));
-        user.setMustChangePassword(false); // Clear the flag after change
-        userRepository.save(user);
-        return ResponseEntity.ok(ApiResponse.success(null, "Password changed successfully"));
     }
 }

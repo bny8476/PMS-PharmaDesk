@@ -11,6 +11,7 @@ import {
   Clock, TrendingUp, TrendingDown, Activity, Thermometer, ShieldAlert,
   Truck, RotateCcw, CheckSquare, Receipt
 } from 'lucide-react';
+import KPICard from '../components/ui/KPICard';
 
 const ROLE_CONFIG = {
   SYSTEM_ADMIN: {
@@ -166,47 +167,25 @@ const KPI_META = {
   systemHealthPct:           { label: 'System Health',             icon: Activity,      color: 'green',  suffix: '%' },
 };
 
-function KpiCard({ kpiKey, value, delta, deltaType }) {
+function AdminKpiWrapper({ kpiKey, value, delta, deltaType }) {
   const meta = KPI_META[kpiKey] || { label: kpiKey, icon: Activity, color: 'slate' };
-  const Icon = meta.icon;
   const isLoading = value === undefined || value === null;
-  
-  const colorMap = {
-    blue: 'text-blue-500 bg-blue-50',
-    green: 'text-emerald-600 bg-emerald-50',
-    amber: 'text-amber-500 bg-amber-50',
-    orange: 'text-orange-500 bg-orange-50',
-    red: 'text-red-500 bg-red-50',
-    purple: 'text-purple-500 bg-purple-50',
-    slate: 'text-slate-500 bg-slate-100',
-  };
 
   const displayValue = isLoading ? '—' : 
     meta.prefix ? `${meta.prefix}${Number(value).toLocaleString('en-IN')}` :
     meta.suffix ? `${Number(value).toLocaleString('en-IN')}${meta.suffix}` :
     Number(value).toLocaleString('en-IN');
 
+  const subtext = delta !== undefined ? `${deltaType === 'up' ? '↑' : '↓'} ${delta} vs yesterday` : undefined;
+
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col gap-3 min-w-0">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide leading-tight">
-          {meta.label}
-        </span>
-        <span className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${colorMap[meta.color]}`}>
-          <Icon className="w-4 h-4" />
-        </span>
-      </div>
-      <div className="text-3xl font-bold text-gray-900 tabular-nums">
-        {isLoading ? <div className="h-9 w-20 bg-gray-100 rounded animate-pulse" /> : displayValue}
-      </div>
-      {delta !== undefined && (
-        <div className={`flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full w-fit
-          ${deltaType === 'up' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
-          {deltaType === 'up' ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-          {delta} vs yesterday
-        </div>
-      )}
-    </div>
+    <KPICard
+      title={meta.label}
+      value={displayValue}
+      icon={meta.icon}
+      subtext={subtext}
+      trend={deltaType === 'up' ? 'up' : deltaType === 'down' ? 'down' : 'neutral'}
+    />
   );
 }
 
@@ -329,22 +308,41 @@ export default function AdminDashboard() {
 
   const config = ROLE_CONFIG[activeRole] || ROLE_CONFIG.SYSTEM_ADMIN;
 
-    const { data: summaryData, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboard-summary', activeRole],
-    queryFn: () => api.get(`/pharmacy/dashboard/summary?days=7`).then(r => r.data?.data ?? {}),
+  const { data: kpiData, isLoading: kpiLoading } = useQuery({
+    queryKey: ['dashboard-kpis', activeRole],
+    queryFn: () => api.get('/pharmacy/dashboard').then(r => r.data?.data ?? {}),
     staleTime: 2000,
     refetchInterval: 5000,
     enabled: !!activeRole
   });
 
-  const kpiData = summaryData?.kpiData;
-  const chartData = summaryData?.chartData;
-  const alerts = summaryData?.alerts;
-  const revenueStrip = summaryData?.revenueStrip;
+  const { data: chartData, isLoading: chartLoading } = useQuery({
+    queryKey: ['dashboard-chart', activeRole],
+    queryFn: () => api.get('/pharmacy/dashboard/chart-data?days=7').then(r => r.data?.data ?? []),
+    staleTime: 5000,
+    refetchInterval: 15000,
+    enabled: !!activeRole
+  });
+
+  const { data: alerts, isLoading: alertsLoading } = useQuery({
+    queryKey: ['dashboard-alerts', activeRole],
+    queryFn: () => api.get('/pharmacy/dashboard/alerts').then(r => r.data?.data ?? []),
+    staleTime: 2000,
+    refetchInterval: 5000,
+    enabled: !!activeRole
+  });
+
+  const { data: revenueStrip, isLoading: revenueLoading } = useQuery({
+    queryKey: ['dashboard-revenue', activeRole],
+    queryFn: () => api.get('/pharmacy/dashboard/revenue-strip').then(r => r.data?.data ?? {}),
+    staleTime: 5000,
+    refetchInterval: 10000,
+    enabled: !!activeRole
+  });
 
   const handleAction = (actionName) => {
-    console.log(`Action triggered: ${actionName}`);
-    // Handle special actions like printDayReport etc.
+    // Future: dispatch action-specific logic (e.g. print day report)
+    void actionName;
   };
 
   return (
@@ -374,7 +372,7 @@ export default function AdminDashboard() {
       {/* KPI Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
         {config.kpiKeys.map(key => (
-          <KpiCard
+          <AdminKpiWrapper
             key={key}
             kpiKey={key}
             value={kpiData?.[key]}

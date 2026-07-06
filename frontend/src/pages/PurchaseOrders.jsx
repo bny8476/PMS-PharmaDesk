@@ -225,7 +225,7 @@ export default function PurchaseOrders() {
 
       <div className="flex flex-wrap items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
         <div className="flex-1 min-w-[200px]">
-          <ModuleFilterBar
+          <ModuleFilterBar searchPlaceholder="Search..."
             onSearch={setSearchTerm}
             searchValue={searchTerm}
             dateRange={dateRange}
@@ -325,20 +325,12 @@ export default function PurchaseOrders() {
 
           <div className="border border-gray-100 rounded-2xl overflow-visible shadow-sm">
             <div className="overflow-visible">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-800 text-white text-[11px] uppercase tracking-widest">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Medicine Name</th>
-                    <th className="px-4 py-3 text-center w-32">Qty</th>
-                    <th className="px-4 py-3 text-right w-32">Unit Price (₹)</th>
-                    <th className="px-4 py-3 text-right w-32">Total</th>
-                    <th className="px-4 py-3 text-center w-12"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {items.map((item, idx) => (
-                    <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 relative">
+              <DataTable 
+                columns={[
+                  {
+                    header: 'Medicine Name',
+                    render: (item, idx) => (
+                      <div className="relative">
                         <input
                           type="text"
                           placeholder="Search medicine..."
@@ -361,33 +353,48 @@ export default function PurchaseOrders() {
                             ))}
                           </div>
                         )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <input type="number" min="1" value={item.qty} onChange={(e) => {
-                          const newItems = [...items];
-                          newItems[idx].qty = e.target.value;
-                          setItems(newItems);
-                        }} className="w-full text-center border border-slate-200 rounded-lg py-1.5 outline-none" />
-                      </td>
-                      <td className="px-4 py-3">
-                        <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => {
-                          const newItems = [...items];
-                          newItems[idx].unitPrice = e.target.value;
-                          setItems(newItems);
-                        }} className="w-full text-right border border-slate-200 rounded-lg py-1.5 outline-none" />
-                      </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-700">
-                        ₹{(Number(item.qty) * Number(item.unitPrice)).toFixed(2)}
-                      </td>
-                      <td className="px-4 py-3 text-center">
+                      </div>
+                    )
+                  },
+                  {
+                    header: <div className="text-center w-32">Qty</div>,
+                    render: (item, idx) => (
+                      <input type="number" min="1" value={item.qty} onChange={(e) => {
+                        const newItems = [...items];
+                        newItems[idx].qty = e.target.value;
+                        setItems(newItems);
+                      }} className="w-full text-center border border-slate-200 rounded-lg py-1.5 outline-none" />
+                    )
+                  },
+                  {
+                    header: <div className="text-right w-32">Unit Price (₹)</div>,
+                    render: (item, idx) => (
+                      <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => {
+                        const newItems = [...items];
+                        newItems[idx].unitPrice = e.target.value;
+                        setItems(newItems);
+                      }} className="w-full text-right border border-slate-200 rounded-lg py-1.5 outline-none" />
+                    )
+                  },
+                  {
+                    header: <div className="text-right w-32">Total</div>,
+                    render: (item) => <div className="text-right font-bold text-slate-700">₹{(Number(item.qty) * Number(item.unitPrice)).toFixed(2)}</div>
+                  },
+                  {
+                    header: <div className="text-center w-12"></div>,
+                    render: (item) => (
+                      <div className="text-center">
                         <button onClick={() => setItems(items.filter(s => s.id !== item.id))} className="text-slate-300 hover:text-red-500">
                           <Trash2 className="w-4 h-4" />
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                      </div>
+                    )
+                  }
+                ]}
+                data={items}
+                hover
+                striped
+              />
             </div>
             <button 
               onClick={() => setItems([...items, { id: Date.now(), medicineId: null, medicineName: '', qty: 1, unitPrice: 0 }])} 

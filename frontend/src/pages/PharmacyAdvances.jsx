@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import { Plus, Search, Eye, RotateCcw, IndianRupee } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -8,18 +9,24 @@ import AppModal from '../components/ui/AppModal';
 import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
 import pharmacyService from '../utils/pharmacyService';
-import { useBillingStore } from '../store/useBillingStore';
+import { usePageData } from '../hooks/usePageData';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function PharmacyAdvances() {
-  const {
-    advancesList,
-    advancesLoading: loading,
-    fetchAdvances
-  } = useBillingStore(useShallow(state => ({
-    advancesList: state.advancesList,
-    advancesLoading: state.advancesLoading,
-    fetchAdvances: state.fetchAdvances
-  })));
+  const queryClient = useQueryClient();
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
+  const [dateRange, setDateRange] = useState({ from: null, to: null });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const { items: advancesList = [], isLoading: loading } = usePageData(
+    'advances',
+    '/pharmacy/advances'
+  );
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedAdvance, setSelectedAdvance] = useState(null);
@@ -28,20 +35,10 @@ export default function PharmacyAdvances() {
   const [patientSearchResults, setPatientSearchResults] = useState([]);
   const [isSearchingPatient, setIsSearchingPatient] = useState(false);
   const [amount, setAmount] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [dateRange, setDateRange] = useState({ from: null, to: null });
 
-  useEffect(() => {
-    fetchAdvances();
-  }, [fetchAdvances]);
-
-  const saveAdvance = async () => {
-    if (!patientName || !amount) {
-      toast.error('Please enter patient name and amount');
-      return;
-    }
-    try {
-      const response = await pharmacyService.addAdvance(patientName, amount, patientId);
+  const saveAdvanceMutation = useMutation({
+    mutationFn: () => pharmacyService.addAdvance(patientName, amount, patientId),
+    onSuccess: (response) => {
       if (response.success) {
         toast.success('Advance collected successfully!');
         setIsModalOpen(false);
@@ -49,11 +46,18 @@ export default function PharmacyAdvances() {
         setPatientId(null);
         setPatientSearchResults([]);
         setAmount('');
-        fetchAdvances();
+        queryClient.invalidateQueries(['advances']);
       }
-    } catch (error) {
-      toast.error('Failed to save advance');
+    },
+    onError: () => toast.error('Failed to save advance')
+  });
+
+  const saveAdvance = () => {
+    if (!patientName || !amount) {
+      toast.error('Please enter patient name and amount');
+      return;
     }
+    saveAdvanceMutation.mutate();
   };
 
   const columns = [
@@ -81,7 +85,7 @@ export default function PharmacyAdvances() {
     )}
   ];
 
-  if (loading) return <div className="p-8 text-center text-slate-500 font-bold">Loading Advances...</div>;
+
 
   return (
     <div className="space-y-6">
@@ -90,7 +94,7 @@ export default function PharmacyAdvances() {
         <p className="text-sm text-gray-500 font-medium">Manage and track patient advance payments for future bills</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -101,23 +105,42 @@ export default function PharmacyAdvances() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable 
-          columns={columns} 
-          data={advancesList.filter(row => {
-             const s = searchTerm.toLowerCase();
-             const matchesSearch = !searchTerm || row.patientName.toLowerCase().includes(s);
-             
-             const advDate = new Date(row.advanceDate);
-             const normalizedAdvDate = new Date(advDate.getFullYear(), advDate.getMonth(), advDate.getDate()).getTime();
-             const matchesFrom = !dateRange.from || normalizedAdvDate >= new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate()).getTime();
-             const matchesTo = !dateRange.to || normalizedAdvDate <= new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate()).getTime();
+        {loading ? (
+          <TableSkeleton rows={5} columns={7} />
+        ) : (
+          <>
+            <DataTable 
+              columns={columns} 
+              data={(() => {
+                const filtered = advancesList.filter(row => {
+                  const s = debouncedSearch.toLowerCase();
+                  const matchesSearch = !debouncedSearch || row.patientName.toLowerCase().includes(s);
+                  
+                  const advDate = new Date(row.advanceDate);
+                  const normalizedAdvDate = new Date(advDate.getFullYear(), advDate.getMonth(), advDate.getDate()).getTime();
+                  const matchesFrom = !dateRange.from || normalizedAdvDate >= new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate()).getTime();
+                  const matchesTo = !dateRange.to || normalizedAdvDate <= new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate()).getTime();
 
-             return matchesSearch && matchesFrom && matchesTo;
-          })} 
-          hover 
-          striped 
-        />
-        <Pagination totalRecords={advancesList.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+                  return matchesSearch && matchesFrom && matchesTo;
+                });
+                return pageSize === 'All' ? filtered : filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+              })()} 
+              hover 
+              striped 
+            />
+            <Pagination totalRecords={advancesList.filter(row => {
+                  const s = debouncedSearch.toLowerCase();
+                  const matchesSearch = !debouncedSearch || row.patientName.toLowerCase().includes(s);
+                  
+                  const advDate = new Date(row.advanceDate);
+                  const normalizedAdvDate = new Date(advDate.getFullYear(), advDate.getMonth(), advDate.getDate()).getTime();
+                  const matchesFrom = !dateRange.from || normalizedAdvDate >= new Date(dateRange.from.getFullYear(), dateRange.from.getMonth(), dateRange.from.getDate()).getTime();
+                  const matchesTo = !dateRange.to || normalizedAdvDate <= new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate()).getTime();
+
+                  return matchesSearch && matchesFrom && matchesTo;
+                }).length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
+          </>
+        )}
       </div>
 
       {/* New Advance Modal */}

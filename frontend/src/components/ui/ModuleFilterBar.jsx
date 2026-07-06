@@ -1,4 +1,5 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { Search, Calendar, Filter, X } from 'lucide-react';
 import ReactDatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
@@ -11,33 +12,38 @@ export default function ModuleFilterBar({
   dateRange = { from: null, to: null },
   filters = [],
   actions = [],
-  searchValue = ""
+  searchValue = "",
+  searchPlaceholder = "Search...",
+  hideDateRange = false,
+  children
 }) {
   return (
     <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-center justify-between gap-4 mb-6">
       <div className="flex flex-wrap items-center gap-4 flex-1">
         {/* Date Ranges */}
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <ReactDatePicker
-              selected={dateRange.from}
-              onChange={(date) => onDateChange('from', date)}
-              placeholderText="From Date"
-              className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 w-36 transition-all"
-            />
-            <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+        {!hideDateRange && (
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <ReactDatePicker
+                selected={dateRange.from}
+                onChange={(date) => onDateChange('from', date)}
+                placeholderText="From Date"
+                className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 w-36 transition-all"
+              />
+              <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+            </div>
+            <span className="text-gray-400 font-medium">to</span>
+            <div className="relative">
+              <ReactDatePicker
+                selected={dateRange.to}
+                onChange={(date) => onDateChange('to', date)}
+                placeholderText="To Date"
+                className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 w-36 transition-all"
+              />
+              <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+            </div>
           </div>
-          <span className="text-gray-400 font-medium">to</span>
-          <div className="relative">
-            <ReactDatePicker
-              selected={dateRange.to}
-              onChange={(date) => onDateChange('to', date)}
-              placeholderText="To Date"
-              className="pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 w-36 transition-all"
-            />
-            <Calendar className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
-          </div>
-        </div>
+        )}
 
         {/* Dynamic Filters */}
         {filters.map((f, i) => (
@@ -61,11 +67,13 @@ export default function ModuleFilterBar({
             type="text"
             value={searchValue}
             onChange={(e) => onSearch(e.target.value)}
-            placeholder="Search by Bill No, Name, UHID..."
+            placeholder={searchPlaceholder}
             className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
           />
           <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
         </div>
+        
+        {children}
       </div>
 
       {/* Action Buttons */}
@@ -91,3 +99,29 @@ export default function ModuleFilterBar({
     </div>
   );
 }
+
+ModuleFilterBar.propTypes = {
+  onSearch: PropTypes.func,
+  onFilterChange: PropTypes.func,
+  onDateChange: PropTypes.func,
+  dateRange: PropTypes.shape({
+    from: PropTypes.instanceOf(Date),
+    to: PropTypes.instanceOf(Date),
+  }),
+  filters: PropTypes.arrayOf(PropTypes.shape({
+    name: PropTypes.string.isRequired,
+    label: PropTypes.string.isRequired,
+    options: PropTypes.arrayOf(PropTypes.shape({
+      value: PropTypes.string.isRequired,
+      label: PropTypes.string.isRequired,
+    })).isRequired,
+  })),
+  actions: PropTypes.arrayOf(PropTypes.shape({
+    label: PropTypes.string.isRequired,
+    icon: PropTypes.elementType,
+    onClick: PropTypes.func.isRequired,
+    variant: PropTypes.oneOf(['primary', 'success', 'default']),
+  })),
+  searchValue: PropTypes.string,
+  searchPlaceholder: PropTypes.string,
+};

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useLocation } from 'react-router-dom';
 import { Eye, Pill, Search } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -7,36 +8,23 @@ import Pagination from '../components/ui/Pagination';
 import AppModal from '../components/ui/AppModal';
 import Badge from '../components/ui/Badge';
 import { toast } from 'react-hot-toast';
-import { useWorklistStore } from '../store/useWorklistStore';
-import { useShallow } from 'zustand/react/shallow';
+import { usePageData } from '../hooks/usePageData';
+import { useQueryClient, useMutation } from '@tanstack/react-query';
+import TableSkeleton from '../components/ui/TableSkeleton';
 
 export default function DispenseWorklists() {
-  const {
-    worklists: filteredPrescriptions,
-    worklistsLoading: loading,
-    worklistsSearchTerm: searchTerm,
-    worklistsDateRange: dateRange,
-    setWorklistsSearch: setSearchTerm,
-    setWorklistsDateRange: setDateRange,
-    fetchWorklists: fetchPrescriptions
-  } = useWorklistStore(useShallow(state => ({
-    worklists: state.worklists,
-    worklistsLoading: state.worklistsLoading,
-    worklistsSearchTerm: state.worklistsSearchTerm,
-    worklistsDateRange: state.worklistsDateRange,
-    setWorklistsSearch: state.setWorklistsSearch,
-    setWorklistsDateRange: state.setWorklistsDateRange,
-    fetchWorklists: state.fetchWorklists
-  })));
+  const queryClient = useQueryClient();
+  const { items: filteredPrescriptions = [], isLoading: loading } = usePageData('dispense-worklists', '/pharmacy/prescriptions/dispense-worklists');
+
+  // Local filter states
+  const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  const [dateRange, setDateRange] = useState({ from: null, to: null });
 
   const location = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPrescription, setSelectedPrescription] = useState(null);
-
-  useEffect(() => {
-    fetchPrescriptions();
-  }, [location.key]);
 
   const columns = [
     { header: 'S.No', render: (_, i) => i + 1 },
@@ -67,9 +55,14 @@ export default function DispenseWorklists() {
     )}
   ];
 
-  // Filtering logic is now handled in useSalesStore
-
-  if (loading) return <div className="p-8 text-center text-slate-500 font-bold italic">Initialising Dispense Worklist...</div>;
+  // Filtering logic
+  const filteredData = filteredPrescriptions.filter(row => {
+    const s = debouncedSearch.toLowerCase();
+    return !debouncedSearch || 
+      row.id?.toString().toLowerCase().includes(s) || 
+      row.patientName?.toLowerCase().includes(s) || 
+      row.doctorName?.toLowerCase().includes(s);
+  });
 
   return (
     <div className="space-y-6">
@@ -78,7 +71,7 @@ export default function DispenseWorklists() {
         <p className="text-sm text-gray-500 font-medium">Verify and dispense prescribed medicines to wards</p>
       </div>
 
-      <ModuleFilterBar 
+      <ModuleFilterBar searchPlaceholder="Search..." 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
         dateRange={dateRange}
@@ -86,8 +79,14 @@ export default function DispenseWorklists() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredPrescriptions} hover striped />
-        <Pagination totalRecords={filteredPrescriptions.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        {loading ? (
+          <TableSkeleton rows={5} columns={7} />
+        ) : (
+          <>
+            <DataTable columns={columns} data={filteredData} hover striped />
+            <Pagination totalRecords={filteredData.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+          </>
+        )}
       </div>
 
       <AppModal 
@@ -101,7 +100,7 @@ export default function DispenseWorklists() {
              <button onClick={() => { 
                 toast.success('Medicines dispensed successfully!'); 
                 setIsModalOpen(false); 
-                fetchPrescriptions(); 
+                queryClient.invalidateQueries(['dispense-worklists']);
              }} className="flex-1 px-6 py-2.5 bg-success text-white rounded-xl text-sm font-bold shadow-lg shadow-green-200 hover:bg-green-700 transition-all font-display">Confirm Dispense</button>
           </div>
         }
@@ -121,20 +120,15 @@ export default function DispenseWorklists() {
             </div>
 
             <div className="border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-              <table className="w-full text-sm">
-                <thead className="bg-[#1e293b] text-white text-[11px] uppercase tracking-widest">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-bold">Medicine</th>
-                    <th className="px-4 py-3 text-center w-32">Dispense Qty</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50 bg-white">
-                   <tr className="hover:bg-slate-50 transition-colors">
-                     <td className="px-4 py-4 font-bold text-slate-700">Prescribed Medicines (Items List)</td>
-                     <td className="px-4 py-4"><input type="number" defaultValue="1" className="w-full text-center border border-slate-200 rounded-lg py-1.5 outline-none focus:border-success font-bold text-success" /></td>
-                   </tr>
-                </tbody>
-              </table>
+              <DataTable
+                columns={[
+                  { header: 'Medicine', render: () => <span className="font-bold text-slate-700">Prescribed Medicines (Items List)</span> },
+                  { header: 'Dispense Qty', render: () => <input type="number" defaultValue="1" className="w-full text-center border border-slate-200 rounded-lg py-1.5 outline-none focus:border-success font-bold text-success" /> }
+                ]}
+                data={[{ id: 1 }]}
+                hover
+                striped
+              />
             </div>
           </div>
         )}

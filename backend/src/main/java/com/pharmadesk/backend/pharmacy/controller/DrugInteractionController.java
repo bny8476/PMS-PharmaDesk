@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.DrugInteraction;
 import com.pharmadesk.backend.model.DrugInteractionCheck;
@@ -45,7 +46,7 @@ public class DrugInteractionController {
     }
 
     @PostMapping("/log-check")
-    public ResponseEntity<ApiResponse<DrugInteractionCheck>> logCheck(@RequestBody DrugInteractionCheck check) {
+    public ResponseEntity<ApiResponse<DrugInteractionCheck>> logCheck(@Valid @RequestBody DrugInteractionCheck check) {
         return ResponseEntity.ok(ApiResponse.success(service.logInteractionCheck(check), "Interaction audit log recorded"));
     }
 

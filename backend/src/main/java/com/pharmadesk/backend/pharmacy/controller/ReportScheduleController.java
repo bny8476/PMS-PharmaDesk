@@ -1,4 +1,5 @@
 package com.pharmadesk.backend.pharmacy.controller;
+import jakarta.validation.Valid;
 
 import com.pharmadesk.backend.model.ReportSchedule;
 import com.pharmadesk.backend.pharmacy.dto.ApiResponse;
@@ -38,7 +39,7 @@ public class ReportScheduleController {
 
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ROLE_SYSTEM_ADMIN','ROLE_SUPERVISOR')")
-    public ResponseEntity<ApiResponse<ReportSchedule>> create(@RequestBody ReportSchedule schedule) {
+    public ResponseEntity<ApiResponse<ReportSchedule>> create(@Valid @RequestBody ReportSchedule schedule) {
         return ResponseEntity.ok(ApiResponse.success(repo.save(schedule), "Schedule created"));
     }
 

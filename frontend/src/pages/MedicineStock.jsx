@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { useShallow } from 'zustand/react/shallow';
 import { Search, ChevronDown, ChevronRight, AlertTriangle, ShieldAlert, Package, CheckCircle, Printer, Download, Plus, RotateCcw, Box } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
@@ -8,6 +9,8 @@ import AppModal from '../components/ui/AppModal';
 import { toast } from 'react-hot-toast';
 import { cn } from '../utils/cn';
 import { useStockStore } from '../store/useStockStore';
+import { useQuery } from '@tanstack/react-query';
+import pharmacyService from '../utils/pharmacyService';
 
 export default function MedicineStock() {
   const {
@@ -40,9 +43,18 @@ export default function MedicineStock() {
 
   // Table state
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  React.useEffect(() => { setCurrentPage(1); }, [debouncedSearch]);
   const [expandedMeds, setExpandedMeds] = useState(new Set());
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+  const [activeTab, setActiveTab] = useState('Total Stock');
+
+  const { data: movementRes, isLoading: isMovementLoading } = useQuery({
+    queryKey: ['stockMovement'],
+    queryFn: () => pharmacyService.getStockMovementInsights(),
+  });
+  const movementData = movementRes?.data || {};
 
   // Modals
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -129,8 +141,8 @@ export default function MedicineStock() {
 
   // Convert to array and filter
   let medicineGroups = Object.values(groupedStocks).filter(group => {
-    const s = searchTerm.toLowerCase();
-    return !searchTerm || 
+    const s = debouncedSearch.toLowerCase();
+    return !debouncedSearch || 
       group.medicine.name?.toLowerCase().includes(s) || 
       group.medicine.medicineCode?.toLowerCase().includes(s);
   });
@@ -166,35 +178,58 @@ export default function MedicineStock() {
       </div>
 
       {/* VALUATION KPIs */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
           <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">Total Stock Value (Cost)</p>
-          <p className="text-2xl font-medium text-slate-900">₹{valuation?.totalPurchaseValue?.toLocaleString() || '0.00'}</p>
+          <p className="text-xl font-medium text-slate-900">₹{valuation?.totalPurchaseValue?.toLocaleString() || '0.00'}</p>
         </div>
         <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
           <p className="text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1">Total Stock Value (MRP)</p>
-          <p className="text-2xl font-medium text-slate-900">₹{valuation?.totalMrpValue?.toLocaleString() || '0.00'}</p>
+          <p className="text-xl font-medium text-slate-900">₹{valuation?.totalMrpValue?.toLocaleString() || '0.00'}</p>
+        </div>
+        <div className="bg-white border border-blue-200 bg-blue-50/30 rounded-lg p-4 shadow-sm">
+          <p className="text-[10px] font-medium text-blue-700 uppercase tracking-wider mb-1">Moving Stock Value</p>
+          <p className="text-xl font-medium text-blue-600">₹{movementData?.movingValue?.toLocaleString() || '0.00'}</p>
+        </div>
+        <div className="bg-white border border-slate-300 bg-slate-50/50 rounded-lg p-4 shadow-sm">
+          <p className="text-[10px] font-medium text-slate-700 uppercase tracking-wider mb-1">Non-Moving Stock Value</p>
+          <p className="text-xl font-medium text-slate-600">₹{movementData?.nonMovingValue?.toLocaleString() || '0.00'}</p>
         </div>
         <div className="bg-white border border-amber-200 bg-amber-50/30 rounded-lg p-4 shadow-sm">
           <p className="text-[10px] font-medium text-amber-700 uppercase tracking-wider mb-1">Near Expiry Risk (&lt;30d)</p>
-          <p className="text-2xl font-medium text-amber-600">₹{valuation?.nearExpiryValue?.toLocaleString() || '0.00'}</p>
+          <p className="text-xl font-medium text-amber-600">₹{valuation?.nearExpiryValue?.toLocaleString() || '0.00'}</p>
         </div>
         <div className="bg-white border border-red-200 bg-red-50/30 rounded-lg p-4 shadow-sm">
           <p className="text-[10px] font-medium text-red-700 uppercase tracking-wider mb-1">Expired Value (Write Off)</p>
-          <p className="text-2xl font-medium text-red-600">₹{valuation?.expiredValue?.toLocaleString() || '0.00'}</p>
+          <p className="text-xl font-medium text-red-600">₹{valuation?.expiredValue?.toLocaleString() || '0.00'}</p>
         </div>
       </div>
 
       <div className="bg-white p-4 rounded-lg border border-slate-200 flex gap-4 items-center shadow-sm">
         <div className="flex-1 max-w-sm">
-          <ModuleFilterBar onSearch={setSearchTerm} searchValue={searchTerm} hideDateRange={true} />
+          <ModuleFilterBar searchPlaceholder="Search..." onSearch={setSearchTerm} searchValue={searchTerm} hideDateRange={true} />
         </div>
         <button className="px-4 py-2 border border-slate-200 text-slate-700 rounded-md text-sm font-medium hover:bg-slate-50 flex items-center gap-2">
           <Download className="w-4 h-4" /> Export Report
         </button>
       </div>
 
+      <div className="flex border-b border-slate-200">
+        {['Total Stock', 'Top Moving Stock', 'Top Non-Moving Stock'].map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={cn("px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors outline-none", 
+              activeTab === tab ? "border-[#1a3c6e] text-[#1a3c6e]" : "border-transparent text-slate-500 hover:text-slate-800"
+            )}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
       {/* BATCH LIST VIEW */}
+      {activeTab === 'Total Stock' && (
       <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-slate-500">Loading stock ledgers...</div>
@@ -241,10 +276,13 @@ export default function MedicineStock() {
                       <div className="text-xs text-slate-400 mt-0.5">{med.medicineCode} - {med.category?.toLowerCase()} / {med.unit}</div>
                     </div>
                     <div className="text-sm text-slate-600">{med.drugClass || '-'}</div>
-                    <div className="text-center">
+                    <div className="text-center flex flex-col items-center">
                       <span className={cn("inline-flex px-2.5 py-1 rounded-full text-xs font-semibold", isLowStock ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700")}>
                         {group.totalQty} {med.unit}
                       </span>
+                      {med.unitsPerPack > 1 && (
+                        <span className="text-[10px] text-slate-400 mt-1 font-medium">= {group.totalQty * med.unitsPerPack} units</span>
+                      )}
                     </div>
                     <div className="pr-4">
                       <div className="flex justify-between text-[10px] mb-1 font-medium">
@@ -331,6 +369,97 @@ export default function MedicineStock() {
         )}
         <Pagination totalRecords={medicineGroups.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
+      )}
+
+      {activeTab === 'Top Moving Stock' && (
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          {isMovementLoading ? (
+            <div className="p-8 text-center text-slate-500">Loading moving stock insights...</div>
+          ) : (
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-200/60 bg-slate-50">
+                  <tr>
+                    <th className="px-6 py-4 font-medium">Medicine Name</th>
+                    <th className="px-6 py-4 font-medium text-right">Units Sold (30d)</th>
+                    <th className="px-6 py-4 font-medium text-right">Sales Value</th>
+                    <th className="px-6 py-4 font-medium text-right">Current Stock</th>
+                    <th className="px-6 py-4 font-medium text-center">Days Remaining</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {movementData?.topMoving?.map(med => (
+                    <tr key={med.medicineId} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-slate-900">{med.medicineName}</div>
+                        <div className="text-xs text-slate-500">{med.drugClass}</div>
+                      </td>
+                      <td className="px-6 py-4 text-right font-medium">{med.totalUnitsDispensed}</td>
+                      <td className="px-6 py-4 text-right font-medium text-emerald-600">₹{med.totalSalesValue?.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right font-medium">{med.currentStockLevel}</td>
+                      <td className="px-6 py-4 text-center">
+                        <Badge variant={med.reorderRecommendation ? 'danger' : 'success'}>
+                          {med.daysOfStockRemaining} Days
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                  {!movementData?.topMoving?.length && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-slate-500">No data available for the selected period.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'Top Non-Moving Stock' && (
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          {isMovementLoading ? (
+            <div className="p-8 text-center text-slate-500">Loading non-moving stock insights...</div>
+          ) : (
+            <div className="w-full overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-slate-500 uppercase tracking-wider border-b border-slate-200/60 bg-slate-50">
+                  <tr>
+                    <th className="px-6 py-4 font-medium">Medicine Name</th>
+                    <th className="px-6 py-4 font-medium text-right">Units Sold (30d)</th>
+                    <th className="px-6 py-4 font-medium text-right">Capital Locked</th>
+                    <th className="px-6 py-4 font-medium text-right">Current Stock</th>
+                    <th className="px-6 py-4 font-medium text-center">Last Dispensed</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[...(movementData?.topNonMoving || [])]
+                    .sort((a, b) => (b.stockValueLocked || 0) - (a.stockValueLocked || 0))
+                    .map(med => (
+                    <tr key={med.medicineId} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-slate-900">{med.medicineName}</div>
+                        <div className="text-xs text-slate-500">{med.drugClass}</div>
+                      </td>
+                      <td className="px-6 py-4 text-right font-medium">{med.totalUnitsDispensed}</td>
+                      <td className="px-6 py-4 text-right font-medium text-red-600">₹{med.stockValueLocked?.toLocaleString() || '0.00'}</td>
+                      <td className="px-6 py-4 text-right font-medium">{med.currentStockLevel}</td>
+                      <td className="px-6 py-4 text-center text-slate-500">
+                        {med.lastDispensedDate ? new Date(med.lastDispensedDate).toLocaleDateString() : 'Never'}
+                      </td>
+                    </tr>
+                  ))}
+                  {!movementData?.topNonMoving?.length && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-8 text-center text-slate-500">No data available for the selected period.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Adjust Stock Modal */}
       <AppModal

@@ -33,9 +33,11 @@ describe('RoleGuard', () => {
     });
 
     render(
-      <RoleGuard allowedRoles={['SYSTEM_ADMIN']}>
-        <div data-testid="admin-content">Admin Content</div>
-      </RoleGuard>
+      <MemoryRouter>
+        <RoleGuard allowedRoles={['SYSTEM_ADMIN']}>
+          <div data-testid="admin-content">Admin Content</div>
+        </RoleGuard>
+      </MemoryRouter>
     );
 
     expect(screen.queryByTestId('admin-content')).not.toBeInTheDocument();

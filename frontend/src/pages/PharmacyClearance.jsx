@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { Search, Eye, Printer, CheckCircle, FileCheck } from 'lucide-react';
 import ModuleFilterBar from '../components/ui/ModuleFilterBar';
 import DataTable from '../components/ui/DataTable';
@@ -17,12 +18,20 @@ export default function PharmacyClearance() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+  
   const [dateRange, setDateRange] = useState({ from: null, to: null });
   const [clearanceList, setClearanceList] = useState(mockClearance);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const filteredClearance = clearanceList.filter(row => {
-    const s = searchTerm.toLowerCase();
-    const matchesSearch = !searchTerm || 
+    const s = debouncedSearch.toLowerCase();
+    const matchesSearch = !debouncedSearch || 
       row.patient.toLowerCase().includes(s) || 
       row.uhid.toLowerCase().includes(s) || 
       row.ward.toLowerCase().includes(s);
@@ -80,6 +89,7 @@ export default function PharmacyClearance() {
       <ModuleFilterBar 
         onSearch={setSearchTerm}
         searchValue={searchTerm}
+        searchPlaceholder="Search by Patient Name, UHID, Ward..."
         dateRange={dateRange}
         onDateChange={(type, val) => setDateRange(prev => ({ ...prev, [type]: val }))}
         filters={[
@@ -88,8 +98,8 @@ export default function PharmacyClearance() {
       />
 
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <DataTable columns={columns} data={filteredClearance} hover striped />
-        <Pagination totalRecords={filteredClearance.length} currentPage={1} pageSize={10} onPageChange={() => {}} onPageSizeChange={() => {}} />
+        <DataTable columns={columns} data={pageSize === 'All' ? filteredClearance : filteredClearance.slice((currentPage - 1) * pageSize, currentPage * pageSize)} hover striped />
+        <Pagination totalRecords={filteredClearance.length} currentPage={currentPage} pageSize={pageSize} onPageChange={setCurrentPage} onPageSizeChange={setPageSize} />
       </div>
 
       <AppModal 
