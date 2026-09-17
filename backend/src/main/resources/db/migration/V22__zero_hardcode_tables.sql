@@ -199,7 +199,7 @@ ALTER TABLE sales_bills ADD COLUMN IF NOT EXISTS payment_mode VARCHAR(50);
 ALTER TABLE sales_bills ADD COLUMN IF NOT EXISTS total_gst_amount DECIMAL(19,2) DEFAULT 0;
 
 RENAME TABLE pharmacy_bill_items TO sales_line_items;
-ALTER TABLE sales_line_items DROP FOREIGN KEY FKppmp8f0p8ggs200cwrqkb548t;
+ALTER TABLE sales_line_items DROP FOREIGN KEY fk_pbi_stock;
 ALTER TABLE sales_line_items CHANGE stock_id batch_id CHAR(36); 
 -- In V20 stock_batches uses batch_id VARCHAR(36), whereas original medicine_stocks used BIGINT id. 
 -- Assuming they are joining to stock_batches for expiry calculations. 

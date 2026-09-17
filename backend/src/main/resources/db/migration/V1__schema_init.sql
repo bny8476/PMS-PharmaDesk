@@ -110,9 +110,8 @@ CREATE TABLE pharmacy_bill_items (
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(100),
-    FOREIGN KEY (bill_id) REFERENCES pharmacy_bills(id),
-    FOREIGN KEY (stock_id) REFERENCES medicine_stocks(id)
+    CONSTRAINT fk_pbi_bill FOREIGN KEY (bill_id) REFERENCES pharmacy_bills(id),
+    CONSTRAINT fk_pbi_stock FOREIGN KEY (stock_id) REFERENCES medicine_stocks(id)
 );
 
 CREATE TABLE medicine_returns (
