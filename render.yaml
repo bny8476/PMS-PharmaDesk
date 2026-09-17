@@ -25,6 +25,16 @@ services:
           type: redis
           name: pharmacy-redis
           property: port
+      - key: SPRING_DATA_REDIS_HOST
+        fromService:
+          type: redis
+          name: pharmacy-redis
+          property: host
+      - key: SPRING_DATA_REDIS_PORT
+        fromService:
+          type: redis
+          name: pharmacy-redis
+          property: port
       - key: SPRING_DATASOURCE_URL
         sync: false
       - key: SPRING_DATASOURCE_USERNAME
