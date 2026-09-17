@@ -124,9 +124,13 @@ public class AuthController {
             data.put("token",             jwt);
 
             return ResponseEntity.ok(ApiResponse.success(data, "Login successful"));
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (org.springframework.security.authentication.BadCredentialsException e) {
             return ResponseEntity.status(401).body(ApiResponse.error("Invalid username or password"));
+        } catch (org.springframework.security.authentication.DisabledException e) {
+            return ResponseEntity.status(401).body(ApiResponse.error("Account is disabled or suspended"));
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(AuthController.class).error("Unexpected error during login", e);
+            return ResponseEntity.status(500).body(ApiResponse.error("Authentication error: " + (e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName())));
         }
     }
 
