@@ -4,7 +4,7 @@ async function test() {
     host: 'gateway01.ap-southeast-1.prod.alicloud.tidbcloud.com',
     port: 4000,
     user: '3ZMzEHamXVuJdSt.root',
-    password: 'o2ldKmVs3hjxipyi',
+    password: '16V7qifbKlm4oYas',
     database: 'pms',
     ssl: { minVersion: 'TLSv1.2' }
   });
