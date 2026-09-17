@@ -215,7 +215,7 @@ CREATE TABLE prescription_items (
 INSERT INTO users (username, password_hash, role, name) 
 VALUES ('admin', '$2a$12$R.S/1aWzP/6G.7jGZtMyqef1v5b3S8/HjQ53K4A6P4L8tVbO9k8v6', 'ADMIN', 'System Administrator');
 
-INSERT INTO medicines (name, generic_name, category, unit, hsn_code, gst_percent, tax_percent, reorder_level) VALUES 
+INSERT INTO medicines (name, generic_name, category, unit, hsn_code, gst_percent, tax_percentage, reorder_level) VALUES 
 ('Paracetamol 500mg', 'Paracetamol', 'Tablet', 'Strips', '30049099', 12.00, 12.00, 10),
 ('Amoxicillin 250mg', 'Amoxicillin', 'Capsule', 'Strips', '30041010', 12.00, 12.00, 5),
 ('Cofsils Cough Syrup', 'Dextromethorphan', 'Syrup', 'Bottle', '30049011', 5.00, 5.00, 20);
