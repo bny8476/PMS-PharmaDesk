@@ -2,14 +2,21 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 
 // Ensure baseURL always ends with '/api' to match the Spring Boot backend
-let base = import.meta.env.VITE_API_URL || '/api';
+let base = import.meta.env.VITE_API_URL;
+
+// Sanitize placeholder strings or missing env values to '/api'
+if (!base || base.trim() === '' || base.includes('API_URL') || base.includes('undefined') || base.includes('[API_URL]')) {
+  base = '/api';
+} else {
+  base = base.trim();
+}
 
 // For local development with Vite proxy, strip out absolute URL to prevent cross-origin cookie rejection
 if (base.startsWith('http://localhost') || base.startsWith('http://127.0.0.1')) {
   base = '/api';
 }
 
-if (base && !base.endsWith('/api')) {
+if (base && base !== '/api' && !base.endsWith('/api')) {
   base = base.endsWith('/') ? `${base}api` : `${base}/api`;
 }
 
