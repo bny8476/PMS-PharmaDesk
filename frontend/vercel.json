@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://pms-d4go.onrender.com/api/:path*"
+      "destination": "https://pms-pharmadesk-seyt.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",

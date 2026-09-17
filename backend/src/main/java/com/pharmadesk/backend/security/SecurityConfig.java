@@ -104,8 +104,14 @@ public class SecurityConfig {
         origins.add("http://127.0.0.1:5173");
         origins.add("http://localhost:5174");
         origins.add("http://127.0.0.1:5174");
+        origins.add("https://pms-pharma-desk-bny2.vercel.app");
+        origins.add("https://pms-pharma-desk.vercel.app");
         if (allowedOrigin != null && !allowedOrigin.isBlank()) {
-            origins.add(allowedOrigin);
+            for (String origin : allowedOrigin.split(",")) {
+                if (!origin.isBlank()) {
+                    origins.add(origin.trim());
+                }
+            }
         }
         configuration.setAllowedOrigins(new java.util.ArrayList<>(origins));
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
