@@ -1,5 +1,5 @@
 -- Seed Medicines
-INSERT INTO medicines (name, generic_name, manufacturer, category, unit, hsn_code, gst_percent, tax_percent) VALUES
+INSERT INTO medicines (name, generic_name, manufacturer, category, unit, hsn_code, gst_percent, tax_percentage) VALUES
 ('Dolo 650', 'Paracetamol', 'Micro Labs', 'Antipyretic', 'Tablet', '3004', 12.0, 12.0),
 ('Pan 40', 'Pantoprazole', 'Alkem', 'Antacid', 'Tablet', '3004', 12.0, 12.0),
 ('Crocin 500', 'Paracetamol', 'GSK', 'Analgesic', 'Tablet', '3004', 12.0, 12.0),

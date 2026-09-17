@@ -1,1 +1,2 @@
+ALTER TABLE medicines ADD COLUMN IF NOT EXISTS tax_percentage DECIMAL(38,2);
 ALTER TABLE medicines MODIFY COLUMN tax_percentage DECIMAL(38,2);

@@ -50,7 +50,7 @@ CREATE TABLE medicines (
     unit VARCHAR(50),
     hsn_code VARCHAR(50),
     gst_percent DECIMAL(5,2),
-    tax_percent DECIMAL(5,2),
+    tax_percentage DECIMAL(38,2),
     reorder_level INT DEFAULT 10,
     is_deleted BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
