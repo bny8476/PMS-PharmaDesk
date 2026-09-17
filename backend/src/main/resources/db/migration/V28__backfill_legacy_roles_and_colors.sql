@@ -1,3 +1,8 @@
+-- Ensure SYSTEM_ADMIN role exists
+INSERT INTO roles (name, is_system_default, permissions_json, is_deleted, color)
+SELECT * FROM (SELECT 'SYSTEM_ADMIN', TRUE, '["ALL_PERMISSIONS", "SYSTEM_ADMIN", "APPROVALS", "VIEW_REPORTS", "VIEW_LOGS", "STOCK_MANAGEMENT", "INVENTORY", "BILLING"]', FALSE, '#4f46e5') AS tmp
+WHERE NOT EXISTS (SELECT name FROM roles WHERE name = 'SYSTEM_ADMIN') LIMIT 1;
+
 -- Backfill user_roles junction for legacy users
 INSERT IGNORE INTO user_roles (user_id, role_id)
 SELECT u.id, r.id FROM users u

@@ -21,15 +21,16 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     }
 
     @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User Not Found: " + username));
 
         // Block SUSPENDED and INACTIVE users at the Spring Security layer
-        boolean accountEnabled = "ACTIVE".equalsIgnoreCase(user.getStatus());
+        boolean accountEnabled = user.getStatus() == null || "ACTIVE".equalsIgnoreCase(user.getStatus());
 
         List<SimpleGrantedAuthority> authorities = user.getRoles() == null
-                ? List.of()
+                ? new java.util.ArrayList<>()
                 : user.getRoles().stream()
                     .filter(role -> role != null && role.getName() != null)
                     .map(role -> {
@@ -39,17 +40,17 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                     })
                     .collect(Collectors.toList());
 
-        // Users with no roles get NO access (not pharmacy staff access)
+        // Fallback to legacy role column if user_roles set is empty
+        if (authorities.isEmpty() && user.getLegacyRole() != null && !user.getLegacyRole().isBlank()) {
+            String legacy = user.getLegacyRole().replace(" ", "_").toUpperCase();
+            if ("ADMIN".equals(legacy)) legacy = "SYSTEM_ADMIN";
+            if (!legacy.startsWith("ROLE_")) legacy = "ROLE_" + legacy;
+            authorities.add(new SimpleGrantedAuthority(legacy));
+        }
+
+        // Default fallback role if both are missing to allow login
         if (authorities.isEmpty()) {
-            // Return enabled=false so login is rejected cleanly with "Bad credentials"
-            return new CustomUserDetails(
-                    user,
-                    false,        // enabled
-                    true,         // accountNonExpired
-                    true,         // credentialsNonExpired
-                    true,         // accountNonLocked
-                    List.of(new SimpleGrantedAuthority("ROLE_NO_ACCESS"))
-            );
+            authorities.add(new SimpleGrantedAuthority("ROLE_USER"));
         }
 
         return new CustomUserDetails(
