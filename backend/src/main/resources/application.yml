@@ -54,7 +54,7 @@ server:
     mime-types: application/json,application/xml,text/html,text/xml,text/plain
 
 cors:
-  allowed-origin: ${CORS_ALLOWED_ORIGIN:https://pharmacy-frontend.onrender.com}
+  allowed-origin: ${CORS_ALLOWED_ORIGIN:https://pms-pharma-desk-bny2.vercel.app}
 
 jwt:
   secret: ${JWT_SECRET:mySecretKeyThatIsAtLeast32BytesLongForJwt1234567890!}
@@ -62,6 +62,8 @@ jwt:
 
 app:
   url: ${APP_URL:http://localhost:5173}
+  backend-health-url: ${BACKEND_HEALTH_URL:}
+  keep-alive-enabled: ${KEEP_ALIVE_ENABLED:true}
   stock-alert:
     cooldown-hours: ${STOCK_ALERT_COOLDOWN:24}
 
