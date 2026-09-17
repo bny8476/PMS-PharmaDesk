@@ -7,12 +7,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 
 @Entity
 @Table(name = "purchase_orders")
-@FilterDef(name = "branchFilter", parameters = @ParamDef(name = "branchId", type = Long.class))
 @Filter(name = "branchFilter", condition = "branch_id = :branchId")
 public class PurchaseOrder {
 

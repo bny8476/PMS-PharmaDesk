@@ -12,14 +12,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 
 @Entity
 @Table(name = "sales_bills")
 @SQLDelete(sql = "UPDATE sales_bills SET is_deleted = true WHERE id=?")
 @SQLRestriction("is_deleted=false")
-@FilterDef(name = "branchFilter", parameters = @ParamDef(name = "branchId", type = Long.class))
 @Filter(name = "branchFilter", condition = "branch_id = :branchId")
 public class PharmacyBill extends BaseEntity {
 

@@ -9,14 +9,11 @@ import org.hibernate.annotations.SQLRestriction;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 
 @Entity
 @Table(name = "pharmacy_advances")
 @SQLDelete(sql = "UPDATE pharmacy_advances SET is_deleted = true WHERE id=?")
 @SQLRestriction("is_deleted=false")
-@FilterDef(name = "branchFilter", parameters = @ParamDef(name = "branchId", type = Long.class))
 @Filter(name = "branchFilter", condition = "branch_id = :branchId")
 public class PharmacyAdvance extends BaseEntity {
 

@@ -2,8 +2,6 @@ package com.pharmadesk.backend.model;
 
 import jakarta.persistence.*;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 import com.fasterxml.jackson.annotation.JsonBackReference;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
@@ -15,7 +13,6 @@ import java.time.LocalDate;
 @Table(name = "medicine_stocks")
 @SQLDelete(sql = "UPDATE medicine_stocks SET is_deleted = true WHERE id=?")
 @SQLRestriction("is_deleted=false")
-@FilterDef(name = "branchFilter", parameters = @ParamDef(name = "branchId", type = Long.class))
 @Filter(name = "branchFilter", condition = "branch_id = :branchId")
 public class MedicineStock extends BaseEntity {
 
