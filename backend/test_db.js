@@ -1,15 +1,16 @@
 const mysql = require('mysql2/promise');
 async function test() {
   const conn = await mysql.createConnection({
-    host: 'gateway01.ap-southeast-1.prod.alicloud.tidbcloud.com',
+    host: 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
     port: 4000,
-    user: '3ZMzEHamXVuJdSt.root',
-    password: '16V7qifbKlm4oYas',
+    user: '3f2NbV8vWW6DGsq.root',
+    password: 'dsdVPJyyEzTDGz6b',
     database: 'pms',
-    ssl: { minVersion: 'TLSv1.2' }
+    ssl: { minVersion: 'TLSv1.2', rejectUnauthorized: false }
   });
-  const [rows] = await conn.execute("SELECT po_number, total_value, subtotal, gst_amount FROM purchase_orders ORDER BY created_at DESC LIMIT 5;");
-  console.log(rows);
+  console.log("Successfully connected to AWS TiDB Cloud database 'pms'!");
+  const [tables] = await conn.execute("SHOW TABLES;");
+  console.log("Tables in pms:", tables);
   conn.end();
 }
 test();
